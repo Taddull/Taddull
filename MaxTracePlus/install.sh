@@ -2,13 +2,16 @@
 # MaxTrace+ installer (macOS, user-level, no administrator rights needed).
 #
 #   ./install.sh                 install or update
+#   ./install.sh --check         only diagnose an existing installation (changes nothing)
 #   ./install.sh --with-tests    also install pytest into the engine venv and run the test suite
 #   ./install.sh --python PATH   use a specific Python 3.9+ interpreter
 #
 # Installs:
 #   ~/Library/Application Support/MaxTrace+/app        application files (replaced on update)
 #   ~/Library/Application Support/MaxTrace+/venv       isolated Python with NumPy + OpenCV
-#   ~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Comp/MaxTrace+.lua
+#   ~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility/MaxTrace+.lua
+#   (Utility scripts are listed under Workspace > Scripts on every page; the
+#   same folder inside Mac App Store sandbox containers is covered too)
 # Never touches: user presets, settings, calibration, rendered highlights,
 # other scripts, Resolve's own Python or preferences.
 
@@ -19,16 +22,31 @@ SUPPORT="${MAXTRACE_HOME:-$HOME/Library/Application Support/MaxTrace+}"
 APP="$SUPPORT/app"
 VENV="$SUPPORT/venv"
 RESOLVE_USER="$HOME/Library/Application Support/Blackmagic Design/DaVinci Resolve"
-SCRIPTS_COMP="${MAXTRACE_SCRIPTS_DIR:-$RESOLVE_USER/Fusion/Scripts/Comp}"
-LAUNCHER="$SCRIPTS_COMP/MaxTrace+.lua"
+SCRIPTS_ROOT="${MAXTRACE_SCRIPTS_ROOT:-$RESOLVE_USER/Fusion/Scripts}"
+LAUNCHER_NAME="MaxTrace+.lua"
 WITH_TESTS=0
+CHECK_ONLY=0
 PYTHON_OVERRIDE=""
+
+# Every Fusion "Scripts" folder Resolve may read: the standard per-user one
+# and the ones inside Mac App Store sandbox containers.
+script_roots() {
+	echo "$SCRIPTS_ROOT"
+	if [ -z "${MAXTRACE_SCRIPTS_ROOT:-}" ]; then
+		local c
+		for c in "$HOME"/Library/Containers/com.blackmagic-design.*/Data/Library/Application\ Support/Blackmagic\ Design/DaVinci\ Resolve; do
+			[ -d "$c" ] && echo "$c/Fusion/Scripts"
+		done
+	fi
+}
+is_ours() { grep -q "MAXTRACE_PLUS_LAUNCHER" "$1" 2>/dev/null; }
 
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--with-tests) WITH_TESTS=1 ;;
+	--check) CHECK_ONLY=1 ;;
 	--python) shift; PYTHON_OVERRIDE="${1:-}" ;;
-	-h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+	-h|--help) sed -n '2,18p' "$0"; exit 0 ;;
 	*) echo "Unknown option: $1" >&2; exit 2 ;;
 	esac
 	shift
@@ -66,9 +84,42 @@ else
 	note "Scripting docs: not found (optional)"
 fi
 
-if [ -e "$LAUNCHER" ] && ! grep -q "MAXTRACE_PLUS_LAUNCHER" "$LAUNCHER" 2>/dev/null; then
-	die "$LAUNCHER exists and was not installed by MaxTrace+. Rename or remove it, then run the installer again."
+# --- Diagnosis only ---------------------------------------------------------------
+if [ "$CHECK_ONLY" = "1" ]; then
+	say "Checking the MaxTrace+ installation"
+	found=0
+	while IFS= read -r root; do
+		for sub in Utility Comp; do
+			f="$root/$sub/$LAUNCHER_NAME"
+			if [ -f "$f" ]; then
+				found=1
+				if is_ours "$f"; then note "menu script OK:      $f"; else note "FOREIGN file:        $f"; fi
+			else
+				note "no menu script in:   $root/$sub"
+			fi
+		done
+	done < <(script_roots)
+	[ -f "$APP/lua/maxtrace/main.lua" ] && note "application OK:      $APP" || note "application MISSING: $APP"
+	if [ -x "$VENV/bin/python3" ]; then
+		"$VENV/bin/python3" -I "$APP/engine/maxtrace_worker.py" --selftest >/dev/null 2>&1 \
+			&& note "engine OK:           $VENV" || note "engine BROKEN:       $VENV (run ./install.sh again)"
+	else
+		note "engine MISSING:      $VENV"
+	fi
+	[ -f "$SUPPORT/logs/maxtrace.log" ] && { note "last log lines:"; tail -n 5 "$SUPPORT/logs/maxtrace.log" | sed 's/^/      /'; }
+	[ "$found" = "1" ] || note "=> The menu script is not installed. Run ./install.sh and read its output for errors."
+	note "After installing, quit and reopen DaVinci Resolve, then look in Workspace > Scripts."
+	exit 0
 fi
+
+while IFS= read -r root; do
+	for sub in Utility Comp; do
+		f="$root/$sub/$LAUNCHER_NAME"
+		if [ -e "$f" ] && ! is_ours "$f"; then
+			die "$f exists and was not installed by MaxTrace+. Rename or remove it, then run the installer again."
+		fi
+	done
+done < <(script_roots)
 
 # --- Python for the engine ----------------------------------------------------
 pick_python() {
@@ -110,6 +161,24 @@ mv "$STAGE" "$APP"
 rm -rf "$APP.old"
 note "$APP"
 
+# --- Resolve menu script (installed first so the menu entry exists even if a
+# later step fails; the panel then explains what is missing) -----------------
+say "Installing the Resolve script"
+LAUNCHERS=""
+while IFS= read -r root; do
+	mkdir -p "$root/Utility"
+	cp "$APP/resolve/$LAUNCHER_NAME" "$root/Utility/$LAUNCHER_NAME"
+	note "$root/Utility/$LAUNCHER_NAME"
+	LAUNCHERS="$LAUNCHERS $root/Utility/$LAUNCHER_NAME"
+	# Earlier versions installed into Comp/; avoid a duplicate menu entry.
+	if [ -f "$root/Comp/$LAUNCHER_NAME" ] && is_ours "$root/Comp/$LAUNCHER_NAME"; then
+		rm -f "$root/Comp/$LAUNCHER_NAME"
+	fi
+	case "$root" in
+	*Containers*) note "Note: this is a Mac App Store (sandboxed) Resolve; macOS may block MaxTrace+ from starting its engine there." ;;
+	esac
+done < <(script_roots)
+
 # --- Isolated Python environment ------------------------------------------------
 say "Preparing the computer-vision engine (isolated Python environment)"
 if [ -x "$VENV/bin/python3" ] && ! "$VENV/bin/python3" -c 'import sys' >/dev/null 2>&1; then
@@ -123,15 +192,6 @@ fi
 	|| die "Installing NumPy/OpenCV failed (internet access is needed during installation only)."
 SELF="$("$VENV/bin/python3" -I "$APP/engine/maxtrace_worker.py" --selftest)" || die "Engine self-test failed."
 note "Engine: $SELF"
-
-# --- Fusion launcher ----------------------------------------------------------
-say "Installing the Resolve script"
-mkdir -p "$SCRIPTS_COMP"
-if [ -e "$LAUNCHER" ] && ! grep -q "MAXTRACE_PLUS_LAUNCHER" "$LAUNCHER" 2>/dev/null; then
-	die "$LAUNCHER exists and was not installed by MaxTrace+. Rename or remove it, then run the installer again."
-fi
-cp "$APP/resolve/MaxTrace+.lua" "$LAUNCHER"
-note "$LAUNCHER"
 
 # --- Smoke test: trace a generated chart with the installed engine -----------
 say "Running a detection smoke test"
@@ -166,15 +226,16 @@ if [ "$WITH_TESTS" = "1" ]; then
 fi
 
 cat > "$SUPPORT/install-info.json" <<EOF
-{"version": "$(cat "$SRC/VERSION")", "installed": "$(date -u +%Y-%m-%dT%H:%M:%SZ)", "resolve": "$RVER", "python": "$PYVER", "launcher": "$LAUNCHER"}
+{"version": "$(cat "$SRC/VERSION")", "installed": "$(date -u +%Y-%m-%dT%H:%M:%SZ)", "resolve": "$RVER", "python": "$PYVER", "launchers": "$LAUNCHERS"}
 EOF
 
 say "Done."
 cat <<EOF
 
-  Open DaVinci Resolve Studio, go to the Fusion page, select your Paint (or
-  MediaIn) node and choose  Workspace > Scripts > MaxTrace+.
-  If MaxTrace+ is not listed yet, restart DaVinci Resolve once.
+  Quit and reopen DaVinci Resolve Studio (it reads the Scripts folders at
+  startup). Then go to the Fusion page, select your Paint (or MediaIn) node
+  and choose  Workspace > Scripts > MaxTrace+.
+  Problems?  ./install.sh --check
 
   Uninstall:  "$SRC/uninstall.sh"
 EOF

@@ -10,19 +10,28 @@
 set -euo pipefail
 
 SUPPORT="${MAXTRACE_HOME:-$HOME/Library/Application Support/MaxTrace+}"
-SCRIPTS_COMP="${MAXTRACE_SCRIPTS_DIR:-$HOME/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Comp}"
-LAUNCHER="$SCRIPTS_COMP/MaxTrace+.lua"
+SCRIPTS_ROOT="${MAXTRACE_SCRIPTS_ROOT:-$HOME/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts}"
 PURGE=0
 [ "${1:-}" = "--purge" ] && PURGE=1
 
-if [ -f "$LAUNCHER" ]; then
-	if grep -q "MAXTRACE_PLUS_LAUNCHER" "$LAUNCHER"; then
-		rm -f "$LAUNCHER"
-		echo "Removed $LAUNCHER"
-	else
-		echo "Left $LAUNCHER in place (not a MaxTrace+ file)."
-	fi
+roots=("$SCRIPTS_ROOT")
+if [ -z "${MAXTRACE_SCRIPTS_ROOT:-}" ]; then
+	for c in "$HOME"/Library/Containers/com.blackmagic-design.*/Data/Library/Application\ Support/Blackmagic\ Design/DaVinci\ Resolve; do
+		[ -d "$c" ] && roots+=("$c/Fusion/Scripts")
+	done
 fi
+for root in "${roots[@]}"; do
+	for sub in Utility Comp; do
+		f="$root/$sub/MaxTrace+.lua"
+		[ -f "$f" ] || continue
+		if grep -q "MAXTRACE_PLUS_LAUNCHER" "$f"; then
+			rm -f "$f"
+			echo "Removed $f"
+		else
+			echo "Left $f in place (not a MaxTrace+ file)."
+		fi
+	done
+done
 
 if [ -d "$SUPPORT" ]; then
 	rm -rf "$SUPPORT/app" "$SUPPORT/venv" "$SUPPORT/cache" "$SUPPORT/logs" "$SUPPORT/.app.new" "$SUPPORT/install-info.json"

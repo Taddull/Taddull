@@ -112,8 +112,8 @@ return function(ctx)
 		local function refresh_source()
 			local comp = current_comp()
 			if not comp then
-				itm.SourceLabel.Text = "No Fusion composition"
-				header("No composition", "#E5A13A")
+				itm.SourceLabel.Text = "Open the Fusion page with your graph clip, then click Use Selected."
+				header("No Fusion composition", "#E5A13A")
 				return nil
 			end
 			local tool

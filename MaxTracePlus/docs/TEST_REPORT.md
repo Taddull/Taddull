@@ -104,9 +104,10 @@ image, blank image), same-colour and already-highlighted warnings,
 resolution-aware thickness, and the calibration suggestion.
 
 The installer and uninstaller were run in a sandbox (with `MAXTRACE_HOME`
-and `MAXTRACE_SCRIPTS_DIR` overrides):
+and `MAXTRACE_SCRIPTS_ROOT` overrides):
 - venv creation, engine self-test and smoke-test trace passed;
-- the installed launcher completed a native generation against the mock;
+- the installed launcher (in `Scripts/Utility`) completed a native generation against the mock, and opened with a clear message when no composition was open;
+- upgrading removed an older `Scripts/Comp` copy so the menu has a single entry, and `--check` reported every location correctly;
 - uninstall kept user data, and `--purge` removed it;
 - an unrelated `MaxTrace+.lua` in the Scripts folder is refused and never overwritten.
 

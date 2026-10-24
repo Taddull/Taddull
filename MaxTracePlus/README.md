@@ -28,7 +28,7 @@ What the installer does:
 
 | Item | Location |
 |---|---|
-| Resolve script (menu entry) | `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Comp/MaxTrace+.lua` |
+| Resolve script (menu entry, listed on every page) | `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility/MaxTrace+.lua` (also inside Mac App Store sandbox containers, if present) |
 | Application | `~/Library/Application Support/MaxTrace+/app` |
 | Computer-vision engine (isolated venv) | `~/Library/Application Support/MaxTrace+/venv` |
 | Your presets / last settings / calibration | `~/Library/Application Support/MaxTrace+/presets`, `settings.json`, `calibration.json` |
@@ -37,9 +37,17 @@ What the installer does:
 
 It never touches Resolve's internal Python, preferences or security
 settings, or other scripts. If an unrelated `MaxTrace+.lua` already exists,
-it stops instead of overwriting it. Updates replace only `app/`. If
-MaxTrace+ doesn't appear in the Scripts menu after the first install,
-restart Resolve once.
+it stops instead of overwriting it. Updates replace only `app/`.
+
+**Quit and reopen Resolve after installing**: it reads the Scripts folders
+when it starts. If MaxTrace+ still isn't in **Workspace > Scripts**, run
+
+```bash
+./install.sh --check
+```
+
+It lists which script folders contain the menu script, whether the app and
+engine are healthy, and the last log lines.
 
 Uninstall:
 
@@ -52,7 +60,7 @@ Uninstall:
 
 1. Put the graph image or clip on the timeline and open the **Fusion** page.
 2. Select **Paint1** (or the MediaIn / any image node showing the graph).
-3. **Workspace > Scripts > MaxTrace+**.
+3. **Workspace > Scripts > MaxTrace+** (the entry is listed on every page).
 4. Click **Generate Highlight**. The status line shows the actual steps:
    reading the frame, detecting the line, generating the path, applying the
    animation, verifying.
@@ -119,6 +127,8 @@ Nothing is removed from your image.
 
 | Message | Meaning / fix |
 |---|---|
+| MaxTrace+ missing from Workspace > Scripts | Quit and reopen Resolve, then run `./install.sh --check`. If the installer printed an error (for example Python or pip), fix it and run `./install.sh` again. |
+| *Open the Fusion page with your graph clip...* | The panel was opened without a Fusion composition; switch to the Fusion page and click **Use Selected**. |
 | *Select the Paint, MediaIn or image node...* | No usable node is selected; select it and click **Use Selected**. |
 | *Paint1 has no image connected to its input* | Connect the graph image to the Paint node. |
 | *No continuous graph line was found* | Use **Pick Color**, raise **Sensitivity**, or set a **Region** in Advanced. |
