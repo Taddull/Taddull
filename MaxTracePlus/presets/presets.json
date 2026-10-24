@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "presets": [
+    {"name": "Clean Red", "description": "Bold documentary highlight",
+     "style": {"color": "#FF2020", "thickness": 7, "opacity": 1.0, "softness": 0.12, "halo": 0.0, "glow": 0.0}},
+    {"name": "Soft Red", "description": "Slightly feathered",
+     "style": {"color": "#FF2A2A", "thickness": 7, "opacity": 1.0, "softness": 0.35, "halo": 0.35, "glow": 0.0}},
+    {"name": "Marker Yellow", "description": "Editorial highlighter",
+     "style": {"color": "#FFD21F", "thickness": 16, "opacity": 0.55, "softness": 0.2, "halo": 0.0, "glow": 0.0}},
+    {"name": "Minimal Blue", "description": "Subtle clean tracing",
+     "style": {"color": "#2E9BFF", "thickness": 5, "opacity": 1.0, "softness": 0.1, "halo": 0.0, "glow": 0.0}},
+    {"name": "Sharp White", "description": "Crisp thin stroke",
+     "style": {"color": "#FFFFFF", "thickness": 4, "opacity": 1.0, "softness": 0.0, "halo": 0.0, "glow": 0.0}}
+  ],
+  "colors": [
+    {"name": "Red", "hex": "#FF2020"},
+    {"name": "Yellow", "hex": "#FFD21F"},
+    {"name": "Cyan", "hex": "#22D3EE"},
+    {"name": "Green", "hex": "#35D06E"},
+    {"name": "White", "hex": "#FFFFFF"}
+  ]
+}
