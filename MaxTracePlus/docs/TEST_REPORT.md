@@ -106,8 +106,8 @@ resolution-aware thickness, and the calibration suggestion.
 The installer and uninstaller were run in a sandbox (with `MAXTRACE_HOME`
 and `MAXTRACE_SCRIPTS_ROOT` overrides):
 - venv creation, engine self-test and smoke-test trace passed;
-- the installed launcher (in `Scripts/Utility`) completed a native generation against the mock, and opened with a clear message when no composition was open;
-- upgrading removed an older `Scripts/Comp` copy so the menu has a single entry, and `--check` reported every location correctly;
+- the installed launcher completed a native generation against the mock, and opened with a clear message when no composition was open;
+- the menu script is installed into `Scripts/Comp` and `Scripts/Utility` before the Python step; with no usable Python the private Python 3.12 was downloaded and checksum-verified, and when the engine step failed the menu scripts were still in place; `--check` reported every location correctly;
 - uninstall kept user data, and `--purge` removed it;
 - an unrelated `MaxTrace+.lua` in the Scripts folder is refused and never overwritten.
 

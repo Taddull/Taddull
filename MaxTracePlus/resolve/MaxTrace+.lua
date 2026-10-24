@@ -2,7 +2,7 @@
 --[[
 MaxTrace+  -  automatic graph-line tracing and write-on highlight for Fusion.
 
-Launcher installed into Fusion's user Scripts/Utility folder so it appears as
+Launcher installed into Fusion's user Scripts/Comp and Scripts/Utility folders so it appears as
 Workspace > Scripts > MaxTrace+ (on every page; it works on the Fusion page). The application itself
 lives in ~/Library/Application Support/MaxTrace+/app (see install.sh).
 --]]

@@ -13,41 +13,46 @@ You don't place any points or wire any nodes by hand.
 
 ## Install
 
-Requirements: macOS, DaVinci Resolve Studio, and Python 3.9 or newer (from
-python.org or Homebrew, or the Xcode Command Line Tools' `python3`). The
-installer needs internet once, to download NumPy and OpenCV into a private
-environment. After that MaxTrace+ runs fully offline.
+Requirements: macOS and DaVinci Resolve **Studio**. Internet is needed once,
+during installation; after that MaxTrace+ runs fully offline. No sudo.
+
+**Easiest:** in Finder, double-click **`Install MaxTrace+.command`** in the
+`MaxTracePlus` folder. If macOS says it is from an unidentified developer,
+right-click it and choose **Open**. Or in Terminal:
 
 ```bash
 cd MaxTracePlus
-./install.sh                # install or update (no sudo)
-./install.sh --with-tests   # optional: also run the test suite
+./install.sh                # install or update
+./install.sh --check        # diagnose (or double-click "Check MaxTrace+.command")
 ```
 
-What the installer does:
+Then **quit Resolve completely (Cmd+Q) and reopen it**; Resolve only reads
+its Scripts folders at startup. MaxTrace+ appears in **Workspace > Scripts**.
+On the Fusion page it may sit in a *Comp* submenu, on other pages in *Utility*.
+
+What the installer does, in this order:
+
+1. Copies the app to `~/Library/Application Support/MaxTrace+/app`.
+2. Installs the menu script **before** anything that could fail, into both
+   `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Comp/MaxTrace+.lua`
+   and `.../Fusion/Scripts/Utility/MaxTrace+.lua` (and the same folders inside
+   Mac App Store sandbox containers, if present).
+3. Finds Python 3.9-3.13 (Homebrew, python.org, or the Xcode tools). If none
+   is usable, it downloads a private, checksum-verified Python 3.12 into
+   `~/Library/Application Support/MaxTrace+/python`.
+4. Creates an isolated venv (`.../MaxTrace+/venv`) with NumPy and OpenCV and
+   runs a self-test plus a detection smoke test.
+
+Everything is logged to `~/Library/Application Support/MaxTrace+/logs/install.log`.
+The installer never touches Resolve's internal Python, preferences or
+security settings, other scripts, or your presets; an unrelated file named
+`MaxTrace+.lua` stops it instead of being overwritten.
 
 | Item | Location |
 |---|---|
-| Resolve script (menu entry, listed on every page) | `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility/MaxTrace+.lua` (also inside Mac App Store sandbox containers, if present) |
-| Application | `~/Library/Application Support/MaxTrace+/app` |
-| Computer-vision engine (isolated venv) | `~/Library/Application Support/MaxTrace+/venv` |
 | Your presets / last settings / calibration | `~/Library/Application Support/MaxTrace+/presets`, `settings.json`, `calibration.json` |
 | Rendered highlight sequences | `~/Library/Application Support/MaxTrace+/renders` |
 | Cache and logs | `~/Library/Application Support/MaxTrace+/cache`, `logs` |
-
-It never touches Resolve's internal Python, preferences or security
-settings, or other scripts. If an unrelated `MaxTrace+.lua` already exists,
-it stops instead of overwriting it. Updates replace only `app/`.
-
-**Quit and reopen Resolve after installing**: it reads the Scripts folders
-when it starts. If MaxTrace+ still isn't in **Workspace > Scripts**, run
-
-```bash
-./install.sh --check
-```
-
-It lists which script folders contain the menu script, whether the app and
-engine are healthy, and the last log lines.
 
 Uninstall:
 
@@ -127,7 +132,7 @@ Nothing is removed from your image.
 
 | Message | Meaning / fix |
 |---|---|
-| MaxTrace+ missing from Workspace > Scripts | Quit and reopen Resolve, then run `./install.sh --check`. If the installer printed an error (for example Python or pip), fix it and run `./install.sh` again. |
+| MaxTrace+ missing from Workspace > Scripts | Quit Resolve with Cmd+Q and reopen it; look for a *Comp* or *Utility* submenu. Then double-click **Check MaxTrace+.command**; it saves a report to your Desktop (`MaxTrace+ check.txt`). |
 | *Open the Fusion page with your graph clip...* | The panel was opened without a Fusion composition; switch to the Fusion page and click **Use Selected**. |
 | *Select the Paint, MediaIn or image node...* | No usable node is selected; select it and click **Use Selected**. |
 | *Paint1 has no image connected to its input* | Connect the graph image to the Paint node. |

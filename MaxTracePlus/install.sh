@@ -4,16 +4,21 @@
 #   ./install.sh                 install or update
 #   ./install.sh --check         only diagnose an existing installation (changes nothing)
 #   ./install.sh --with-tests    also install pytest into the engine venv and run the test suite
-#   ./install.sh --python PATH   use a specific Python 3.9+ interpreter
+#   ./install.sh --python PATH   use a specific Python 3.9-3.13 interpreter
+#
+# Double-clickable alternatives: "Install MaxTrace+.command", "Check MaxTrace+.command".
 #
 # Installs:
+#   ~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Comp/MaxTrace+.lua
+#   ~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility/MaxTrace+.lua
+#       (same file in both: Comp scripts are listed on the Fusion page,
+#        Utility scripts on every page; Mac App Store containers are covered too)
 #   ~/Library/Application Support/MaxTrace+/app        application files (replaced on update)
 #   ~/Library/Application Support/MaxTrace+/venv       isolated Python with NumPy + OpenCV
-#   ~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility/MaxTrace+.lua
-#   (Utility scripts are listed under Workspace > Scripts on every page; the
-#   same folder inside Mac App Store sandbox containers is covered too)
+#   ~/Library/Application Support/MaxTrace+/python     private Python, only if no usable one exists
 # Never touches: user presets, settings, calibration, rendered highlights,
 # other scripts, Resolve's own Python or preferences.
+# A full log is written to ~/Library/Application Support/MaxTrace+/logs/install.log
 
 set -euo pipefail
 
@@ -21,12 +26,41 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUPPORT="${MAXTRACE_HOME:-$HOME/Library/Application Support/MaxTrace+}"
 APP="$SUPPORT/app"
 VENV="$SUPPORT/venv"
+PRIVATE_PY="$SUPPORT/python"
 RESOLVE_USER="$HOME/Library/Application Support/Blackmagic Design/DaVinci Resolve"
 SCRIPTS_ROOT="${MAXTRACE_SCRIPTS_ROOT:-$RESOLVE_USER/Fusion/Scripts}"
 LAUNCHER_NAME="MaxTrace+.lua"
+MENU_DIRS="Comp Utility"
 WITH_TESTS=0
 CHECK_ONLY=0
 PYTHON_OVERRIDE=""
+
+# Standalone CPython (astral-sh/python-build-standalone), pinned with checksums.
+PBS_BASE="https://github.com/astral-sh/python-build-standalone/releases/download/20241016"
+PBS_ARM="cpython-3.12.7%2B20241016-aarch64-apple-darwin-install_only.tar.gz"
+PBS_ARM_SHA="4c18852bf9c1a11b56f21bcf0df1946f7e98ee43e9e4c0c5374b2b3765cf9508"
+PBS_X86="cpython-3.12.7%2B20241016-x86_64-apple-darwin-install_only.tar.gz"
+PBS_X86_SHA="60c5271e7edc3c2ab47440b7abf4ed50fbc693880b474f74f05768f5b657045a"
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--with-tests) WITH_TESTS=1 ;;
+	--check) CHECK_ONLY=1 ;;
+	--python) shift; PYTHON_OVERRIDE="${1:-}" ;;
+	-h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+	*) echo "Unknown option: $1" >&2; exit 2 ;;
+	esac
+	shift
+done
+
+mkdir -p "$SUPPORT/logs"
+LOG="$SUPPORT/logs/install.log"
+exec > >(tee -a "$LOG") 2>&1
+echo "===== $(date) install.sh $* ====="
+
+say() { printf '\033[1m%s\033[0m\n' "$*"; }
+note() { printf '  %s\n' "$*"; }
+die() { printf '\033[31mError:\033[0m %s\n' "$*"; printf '  (full log: %s)\n' "$LOG"; exit 1; }
 
 # Every Fusion "Scripts" folder Resolve may read: the standard per-user one
 # and the ones inside Mac App Store sandbox containers.
@@ -38,50 +72,32 @@ script_roots() {
 			[ -d "$c" ] && echo "$c/Fusion/Scripts"
 		done
 	fi
+	return 0
 }
 is_ours() { grep -q "MAXTRACE_PLUS_LAUNCHER" "$1" 2>/dev/null; }
 
-while [ $# -gt 0 ]; do
-	case "$1" in
-	--with-tests) WITH_TESTS=1 ;;
-	--check) CHECK_ONLY=1 ;;
-	--python) shift; PYTHON_OVERRIDE="${1:-}" ;;
-	-h|--help) sed -n '2,18p' "$0"; exit 0 ;;
-	*) echo "Unknown option: $1" >&2; exit 2 ;;
-	esac
-	shift
-done
-
-say() { printf '\033[1m%s\033[0m\n' "$*"; }
-note() { printf '  %s\n' "$*"; }
-die() { printf '\033[31mError:\033[0m %s\n' "$*" >&2; exit 1; }
-
 say "MaxTrace+ $(cat "$SRC/VERSION") installer"
 
-# --- Environment checks -------------------------------------------------------
+# --- Environment ----------------------------------------------------------------
 OS="$(uname -s)"
 ARCH="$(uname -m)"
-note "System: $OS $ARCH"
+MACOS="$(sw_vers -productVersion 2>/dev/null || echo "?")"
+note "System: $OS $ARCH (macOS $MACOS)"
 if [ "$OS" != "Darwin" ] && [ -z "${MAXTRACE_HOME:-}" ]; then
 	die "MaxTrace+ installs into DaVinci Resolve on macOS. (Set MAXTRACE_HOME to install elsewhere for testing.)"
 fi
 
-RESOLVE_APP=""
-for cand in "/Applications/DaVinci Resolve/DaVinci Resolve.app" "/Applications/DaVinci Resolve Studio/DaVinci Resolve.app" "/Applications/DaVinci Resolve.app"; do
-	if [ -d "$cand" ]; then RESOLVE_APP="$cand"; break; fi
+RVER="not found"
+for cand in "/Applications/DaVinci Resolve/DaVinci Resolve.app" /Applications/DaVinci\ Resolve*/DaVinci\ Resolve*.app /Applications/DaVinci\ Resolve*.app; do
+	if [ -d "$cand" ]; then
+		RVER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$cand/Contents/Info.plist" 2>/dev/null || echo unknown)"
+		note "DaVinci Resolve: $RVER ($cand)"
+		break
+	fi
 done
-if [ -n "$RESOLVE_APP" ]; then
-	RVER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$RESOLVE_APP/Contents/Info.plist" 2>/dev/null || echo unknown)"
-	note "DaVinci Resolve: $RVER ($RESOLVE_APP)"
-else
-	RVER="not found"
-	note "DaVinci Resolve: not found in /Applications (installing anyway)"
-fi
-DOCS="/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/README.txt"
-if [ -f "$DOCS" ]; then
-	note "Scripting docs: $DOCS"
-else
-	note "Scripting docs: not found (optional)"
+[ "$RVER" = "not found" ] && note "DaVinci Resolve: not found in /Applications (installing anyway)"
+if pgrep -xq "Resolve" 2>/dev/null; then
+	note "Resolve is running: quit and reopen it after installing so it lists the new script."
 fi
 
 # --- Diagnosis only ---------------------------------------------------------------
@@ -89,7 +105,7 @@ if [ "$CHECK_ONLY" = "1" ]; then
 	say "Checking the MaxTrace+ installation"
 	found=0
 	while IFS= read -r root; do
-		for sub in Utility Comp; do
+		for sub in $MENU_DIRS; do
 			f="$root/$sub/$LAUNCHER_NAME"
 			if [ -f "$f" ]; then
 				found=1
@@ -98,22 +114,31 @@ if [ "$CHECK_ONLY" = "1" ]; then
 				note "no menu script in:   $root/$sub"
 			fi
 		done
+		if [ -d "$root" ]; then
+			note "contents of $root:"
+			(cd "$root" && find . -maxdepth 2 | sed 's/^/      /' | head -40)
+		else
+			note "folder does not exist: $root"
+		fi
 	done < <(script_roots)
 	[ -f "$APP/lua/maxtrace/main.lua" ] && note "application OK:      $APP" || note "application MISSING: $APP"
 	if [ -x "$VENV/bin/python3" ]; then
-		"$VENV/bin/python3" -I "$APP/engine/maxtrace_worker.py" --selftest >/dev/null 2>&1 \
-			&& note "engine OK:           $VENV" || note "engine BROKEN:       $VENV (run ./install.sh again)"
+		if "$VENV/bin/python3" -I "$APP/engine/maxtrace_worker.py" --selftest >/dev/null 2>&1; then
+			note "engine OK:           $VENV"
+		else
+			note "engine BROKEN:       $VENV (run the installer again)"
+		fi
 	else
 		note "engine MISSING:      $VENV"
 	fi
-	[ -f "$SUPPORT/logs/maxtrace.log" ] && { note "last log lines:"; tail -n 5 "$SUPPORT/logs/maxtrace.log" | sed 's/^/      /'; }
-	[ "$found" = "1" ] || note "=> The menu script is not installed. Run ./install.sh and read its output for errors."
-	note "After installing, quit and reopen DaVinci Resolve, then look in Workspace > Scripts."
+	[ -f "$SUPPORT/logs/maxtrace.log" ] && { note "last panel log lines:"; tail -n 8 "$SUPPORT/logs/maxtrace.log" | sed 's/^/      /'; }
+	[ "$found" = "1" ] || note "=> The menu script is not installed. Run the installer and read its output for errors."
+	note "Resolve reads the Scripts folders when it starts: quit and reopen it, then look in Workspace > Scripts."
 	exit 0
 fi
 
 while IFS= read -r root; do
-	for sub in Utility Comp; do
+	for sub in $MENU_DIRS; do
 		f="$root/$sub/$LAUNCHER_NAME"
 		if [ -e "$f" ] && ! is_ours "$f"; then
 			die "$f exists and was not installed by MaxTrace+. Rename or remove it, then run the installer again."
@@ -121,32 +146,9 @@ while IFS= read -r root; do
 	done
 done < <(script_roots)
 
-# --- Python for the engine ----------------------------------------------------
-pick_python() {
-	local c
-	for c in "$PYTHON_OVERRIDE" /opt/homebrew/bin/python3 /usr/local/bin/python3 \
-		/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 \
-		/Library/Frameworks/Python.framework/Versions/3.12/bin/python3 \
-		/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 \
-		/Library/Frameworks/Python.framework/Versions/3.10/bin/python3 \
-		"$(command -v python3 2>/dev/null || true)" /usr/bin/python3; do
-		[ -n "$c" ] && [ -x "$c" ] || continue
-		if "$c" -c 'import sys,venv; sys.exit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
-			echo "$c"; return 0
-		fi
-	done
-	return 1
-}
-PY="$(pick_python)" || die "Python 3.9 or newer is required (install from python.org or Homebrew, or the Xcode Command Line Tools), then run this installer again."
-PYVER="$("$PY" -c 'import sys,platform; print("%d.%d.%d %s" % (sys.version_info[:3] + (platform.machine(),)))')"
-note "Python for the engine: $PY ($PYVER)"
-if [ "$ARCH" = "arm64" ] && ! echo "$PYVER" | grep -q arm64; then
-	note "Warning: this Python is not native arm64; the engine will run under Rosetta."
-fi
-
 # --- Application files ----------------------------------------------------------
 say "Installing application files"
-mkdir -p "$SUPPORT" "$SUPPORT/presets" "$SUPPORT/logs" "$SUPPORT/cache" "$SUPPORT/renders"
+mkdir -p "$SUPPORT" "$SUPPORT/presets" "$SUPPORT/cache" "$SUPPORT/renders"
 STAGE="$SUPPORT/.app.new"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
@@ -161,35 +163,91 @@ mv "$STAGE" "$APP"
 rm -rf "$APP.old"
 note "$APP"
 
-# --- Resolve menu script (installed first so the menu entry exists even if a
-# later step fails; the panel then explains what is missing) -----------------
+# --- Resolve menu script. Installed before anything that can fail, so the
+# menu entry always exists; the panel then explains anything still missing. ---
 say "Installing the Resolve script"
 LAUNCHERS=""
 while IFS= read -r root; do
-	mkdir -p "$root/Utility"
-	cp "$APP/resolve/$LAUNCHER_NAME" "$root/Utility/$LAUNCHER_NAME"
-	note "$root/Utility/$LAUNCHER_NAME"
-	LAUNCHERS="$LAUNCHERS $root/Utility/$LAUNCHER_NAME"
-	# Earlier versions installed into Comp/; avoid a duplicate menu entry.
-	if [ -f "$root/Comp/$LAUNCHER_NAME" ] && is_ours "$root/Comp/$LAUNCHER_NAME"; then
-		rm -f "$root/Comp/$LAUNCHER_NAME"
-	fi
+	for sub in $MENU_DIRS; do
+		mkdir -p "$root/$sub"
+		cp "$APP/resolve/$LAUNCHER_NAME" "$root/$sub/$LAUNCHER_NAME"
+		chmod 644 "$root/$sub/$LAUNCHER_NAME"
+		note "$root/$sub/$LAUNCHER_NAME"
+		LAUNCHERS="$LAUNCHERS $root/$sub/$LAUNCHER_NAME"
+	done
 	case "$root" in
 	*Containers*) note "Note: this is a Mac App Store (sandboxed) Resolve; macOS may block MaxTrace+ from starting its engine there." ;;
 	esac
 done < <(script_roots)
 
-# --- Isolated Python environment ------------------------------------------------
-say "Preparing the computer-vision engine (isolated Python environment)"
-if [ -x "$VENV/bin/python3" ] && ! "$VENV/bin/python3" -c 'import sys' >/dev/null 2>&1; then
-	rm -rf "$VENV"
+# --- Python for the engine ----------------------------------------------------
+py_ok() {
+	"$1" -c 'import sys, venv; sys.exit(0 if (3, 9) <= sys.version_info[:2] <= (3, 13) else 1)' >/dev/null 2>&1
+}
+pick_python() {
+	local c
+	local cands=("$PYTHON_OVERRIDE" /opt/homebrew/bin/python3 /usr/local/bin/python3)
+	for v in 3.13 3.12 3.11 3.10 3.9; do
+		cands+=("/Library/Frameworks/Python.framework/Versions/$v/bin/python3" "/opt/homebrew/bin/python$v" "/usr/local/bin/python$v")
+	done
+	cands+=("$PRIVATE_PY/bin/python3")
+	c="$(command -v python3 2>/dev/null || true)"
+	[ -n "$c" ] && [ "$c" != "/usr/bin/python3" ] && cands+=("$c")
+	# /usr/bin/python3 is only a stub (it opens an install dialog) unless the
+	# Xcode Command Line Tools are installed.
+	if xcode-select -p >/dev/null 2>&1; then cands+=(/usr/bin/python3); fi
+	for c in "${cands[@]}"; do
+		[ -n "$c" ] && [ -x "$c" ] || continue
+		if py_ok "$c"; then echo "$c"; return 0; fi
+	done
+	return 1
+}
+download_python() {
+	local file sha url tgz
+	case "$ARCH" in
+	arm64) file="$PBS_ARM"; sha="$PBS_ARM_SHA" ;;
+	x86_64) file="$PBS_X86"; sha="$PBS_X86_SHA" ;;
+	*) return 1 ;;
+	esac
+	url="$PBS_BASE/$file"
+	tgz="$SUPPORT/cache/python.tar.gz"
+	note "No suitable Python found; downloading a private Python 3.12 (about 16 MB)..."
+	curl -fsSL --retry 3 -o "$tgz" "$url" || return 1
+	if [ "$(shasum -a 256 "$tgz" | awk '{print $1}')" != "$sha" ]; then
+		rm -f "$tgz"
+		note "Checksum mismatch for the downloaded Python; not using it."
+		return 1
+	fi
+	rm -rf "$PRIVATE_PY" "$SUPPORT/.python.new"
+	mkdir -p "$SUPPORT/.python.new"
+	tar -xzf "$tgz" -C "$SUPPORT/.python.new" || return 1
+	mv "$SUPPORT/.python.new/python" "$PRIVATE_PY"
+	rm -rf "$SUPPORT/.python.new" "$tgz"
+	xattr -dr com.apple.quarantine "$PRIVATE_PY" 2>/dev/null || true
+	py_ok "$PRIVATE_PY/bin/python3"
+}
+
+say "Preparing the computer-vision engine"
+PY="$(pick_python || true)"
+if [ -z "$PY" ]; then
+	download_python || die "No Python 3.9-3.13 found and the private Python download failed. The menu script IS installed; install Python from https://www.python.org/downloads/macos/ and run the installer again."
+	PY="$PRIVATE_PY/bin/python3"
+fi
+PYVER="$("$PY" -c 'import sys,platform; print("%d.%d.%d %s" % (sys.version_info[:3] + (platform.machine(),)))')"
+note "Python: $PY ($PYVER)"
+
+# A venv built from a different interpreter is rebuilt.
+if [ -x "$VENV/bin/python3" ]; then
+	if ! "$VENV/bin/python3" -c 'import sys' >/dev/null 2>&1 || ! grep -q "$("$PY" -c 'import sys; print(sys.base_prefix)')" "$VENV/pyvenv.cfg" 2>/dev/null; then
+		rm -rf "$VENV"
+	fi
 fi
 if [ ! -x "$VENV/bin/python3" ]; then
 	"$PY" -m venv "$VENV" || die "Could not create the Python environment at $VENV"
 fi
 "$VENV/bin/python3" -m pip install --disable-pip-version-check -q --upgrade pip >/dev/null 2>&1 || true
 "$VENV/bin/python3" -m pip install --disable-pip-version-check -q -r "$APP/requirements.txt" \
-	|| die "Installing NumPy/OpenCV failed (internet access is needed during installation only)."
+	|| die "Installing NumPy/OpenCV failed (internet access is needed during installation only). The menu script IS installed."
 SELF="$("$VENV/bin/python3" -I "$APP/engine/maxtrace_worker.py" --selftest)" || die "Engine self-test failed."
 note "Engine: $SELF"
 
@@ -232,10 +290,12 @@ EOF
 say "Done."
 cat <<EOF
 
-  Quit and reopen DaVinci Resolve Studio (it reads the Scripts folders at
-  startup). Then go to the Fusion page, select your Paint (or MediaIn) node
-  and choose  Workspace > Scripts > MaxTrace+.
-  Problems?  ./install.sh --check
+  1. Quit DaVinci Resolve completely (Cmd+Q) and open it again -
+     it only reads the Scripts folders when it starts.
+  2. Go to the Fusion page, select your Paint (or MediaIn) node.
+  3. Workspace > Scripts > MaxTrace+   (on the Fusion page it can also be
+     under a "Comp" submenu; on other pages under "Utility").
 
-  Uninstall:  "$SRC/uninstall.sh"
+  Problems?  run "Check MaxTrace+.command" (or ./install.sh --check)
+  and send the output.  Full log: $LOG
 EOF

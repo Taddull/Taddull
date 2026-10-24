@@ -34,7 +34,7 @@ for root in "${roots[@]}"; do
 done
 
 if [ -d "$SUPPORT" ]; then
-	rm -rf "$SUPPORT/app" "$SUPPORT/venv" "$SUPPORT/cache" "$SUPPORT/logs" "$SUPPORT/.app.new" "$SUPPORT/install-info.json"
+	rm -rf "$SUPPORT/app" "$SUPPORT/venv" "$SUPPORT/python" "$SUPPORT/cache" "$SUPPORT/logs" "$SUPPORT/.app.new" "$SUPPORT/.python.new" "$SUPPORT/install-info.json"
 	echo "Removed application, engine, cache and logs from $SUPPORT"
 	if [ "$PURGE" = "1" ]; then
 		rm -rf "$SUPPORT"
