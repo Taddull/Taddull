@@ -1,0 +1,6 @@
+dist/
+app/.build/
+app/.swiftpm/
+__pycache__/
+*.pyc
+.pytest_cache/

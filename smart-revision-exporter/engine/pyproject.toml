@@ -1,0 +1,17 @@
+[project]
+name = "srx"
+version = "1.0.0"
+description = "Smart Revision Exporter engine: verified selective H.264 MP4 revision patching for DaVinci Resolve"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+fast = ["numpy"]
+test = ["pytest"]
+
+[project.scripts]
+srx = "srx.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: long-running test (15-minute master)"]

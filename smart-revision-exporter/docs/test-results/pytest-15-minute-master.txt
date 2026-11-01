@@ -1,0 +1,30 @@
+{
+ "generate_master_s": 65.2,
+ "export_s": 155.8,
+ "timings": {
+  "analyze": 0.62,
+  "render": 128.3,
+  "encode": 0.66,
+  "audio": 2.21,
+  "assemble": 0.88,
+  "verify": 22.88
+ },
+ "stats": {
+  "master_frames": 26973,
+  "output_frames": 26973,
+  "preserved_frames": 26723,
+  "reencoded_frames": 250,
+  "revised_frames": 150,
+  "boundary_frames": 100,
+  "rendered_video_frames": 257,
+  "rendered_percent": 0.9528046565083602,
+  "preserved_percent": 99.07314722129537,
+  "render_jobs": 1,
+  "duration_change_frames": 0,
+  "audio_strategies": [
+   "splice"
+  ]
+ }
+}
+.
+1 passed in 259.87s (0:04:19)
