@@ -2,8 +2,11 @@
 
 120 BPM, 4/4 -> one bar = 2 s = 60 video frames, so every scene cut lands on a bar line.
 Pure numpy (no samples): kick, clap, hats, bass, supersaw pads, plucked arp, risers,
-whooshes and impacts. Writes public/discord-promo-music.wav (44.1 kHz, 16-bit stereo).
+whooshes and impacts. Writes public/discord-promo-music.wav (44.1 kHz, 16-bit stereo) and, when ffmpeg is
+available, public/discord-promo-music.mp3 (320 kbps) which the composition uses.
 """
+import shutil
+import subprocess
 import wave
 import numpy as np
 
@@ -343,3 +346,7 @@ with wave.open('public/discord-promo-music.wav', 'wb') as w:
     w.setframerate(SR)
     w.writeframes(pcm.tobytes())
 print('wrote public/discord-promo-music.wav', st.shape, 'peak', np.max(np.abs(st)))
+if shutil.which('ffmpeg'):
+    subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', 'public/discord-promo-music.wav',
+                    '-c:a', 'libmp3lame', '-b:a', '320k', 'public/discord-promo-music.mp3'], check=True)
+    print('wrote public/discord-promo-music.mp3')

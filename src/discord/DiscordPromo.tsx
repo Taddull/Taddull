@@ -79,7 +79,7 @@ export const SHUTTERS = [540, 1200, 1800, 2340, 2880, 3420];
 export const DiscordPromo: React.FC = () => {
 	return (
 		<AbsoluteFill style={{background: C.space}}>
-			<Audio src={staticFile('discord-promo-music.wav')} />
+			<Audio src={staticFile('discord-promo-music.mp3')} />
 			{SCENES.map((s, i) => (
 				<Sequence key={s.id} from={s.from} durationInFrames={s.to - s.from + TAIL} name={s.id}>
 					<Shell dur={s.to - s.from} first={i === 0} last={i === SCENES.length - 1}>
