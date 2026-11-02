@@ -11,12 +11,12 @@ const RED = '#FF0000';
 const ease3 = (x: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
 
 /* supersampled 3D world root (see engine/scene3d StationFrame for why) + a positioned node */
-const World: React.FC<{children: React.ReactNode}> = ({children}) => (
+export const World: React.FC<{children: React.ReactNode}> = ({children}) => (
 	<div style={{position: 'absolute', left: 0, top: 0, transformStyle: 'preserve-3d', transformOrigin: '0 0', transform: 'scale3d(0.5,0.5,0.5)'}}>
 		<div style={{position: 'relative', width: 0, height: 0, zoom: 2, transformStyle: 'preserve-3d'}}>{children}</div>
 	</div>
 );
-const At: React.FC<{x?: number; y?: number; z?: number; rx?: number; ry?: number; rz?: number; s?: number; children: React.ReactNode; style?: React.CSSProperties}> = ({
+export const At: React.FC<{x?: number; y?: number; z?: number; rx?: number; ry?: number; rz?: number; s?: number; children: React.ReactNode; style?: React.CSSProperties}> = ({
 	x = 0,
 	y = 0,
 	z = 0,
@@ -32,7 +32,7 @@ const At: React.FC<{x?: number; y?: number; z?: number; rx?: number; ry?: number
 	</div>
 );
 
-const DarkBg: React.FC<{t: number; glow?: string; glow2?: string}> = ({t, glow = 'rgba(255,0,0,0.16)', glow2 = 'rgba(120,40,255,0.10)'}) => (
+export const DarkBg: React.FC<{t: number; glow?: string; glow2?: string}> = ({t, glow = 'rgba(255,0,0,0.16)', glow2 = 'rgba(120,40,255,0.10)'}) => (
 	<AbsoluteFill style={{background: 'radial-gradient(100% 90% at 50% 45%, #151010 0%, #0A0A0A 55%, #030303 100%)'}}>
 		<div style={{position: 'absolute', left: 300 + Math.sin(t / 60) * 80, top: 120, width: 1300, height: 900, background: `radial-gradient(closest-side, ${glow}, transparent)`}} />
 		<div style={{position: 'absolute', right: -200 + Math.cos(t / 70) * 60, bottom: -300, width: 1200, height: 900, background: `radial-gradient(closest-side, ${glow2}, transparent)`}} />

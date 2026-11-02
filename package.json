@@ -11,7 +11,9 @@
     "audio:youtube": "python3 scripts/make_audio.py --timeline src/youtube/timeline.ts --out public/youtube-promo-music",
     "render:youtube": "remotion render src/index.ts YouTubePromo out/youtube-promo.mp4 --concurrency=4 --crf=20",
     "audio:ytfilm": "python3 scripts/make_audio.py --timeline src/ytfilm/film.ts --out public/youtube-film-music",
-    "render:ytfilm": "remotion render src/index.ts YouTubeFilm out/youtube-film.mp4 --concurrency=4 --crf=20"
+    "render:ytfilm": "remotion render src/index.ts YouTubeFilm out/youtube-film.mp4 --concurrency=4 --crf=20",
+    "audio:dcfilm": "python3 scripts/make_audio.py --timeline src/dcfilm/film.ts --out public/discord-film-music",
+    "render:dcfilm": "remotion render src/index.ts DiscordFilm out/discord-film.mp4 --concurrency=4 --crf=20"
   },
   "repository": {
     "type": "git",
