@@ -1,3 +1,4 @@
 node_modules
 out/*.png
 public/*.wav
+__pycache__/
