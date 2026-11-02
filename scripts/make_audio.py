@@ -4,8 +4,12 @@ toggles, a gentle alert, shimmers, a sub impact) and a camera "air" layer that f
 speed. Cue times and camera speed come straight from src/discord/timeline.ts (read via `node`), and
 every cue is snapped to the 16th-note grid and pitched to the current chord. Pure numpy, no samples.
 
-Writes public/discord-promo-music.wav (gitignored) and public/discord-promo-music.mp3.
+Usage:
+  python3 scripts/make_audio.py                                   # Discord promo (default)
+  python3 scripts/make_audio.py --timeline src/youtube/timeline.ts --out public/youtube-promo-music
+Writes <out>.wav (gitignored) and <out>.mp3, loudness-normalised to --lufs (default -16).
 """
+import argparse
 import json
 import shutil
 import subprocess
@@ -23,8 +27,11 @@ N = int(SR * DUR)
 rng = np.random.default_rng(11)
 
 
+ARGS = argparse.Namespace(timeline='src/discord/timeline.ts', out='public/discord-promo-music', lufs=-16.0)
+
+
 def load_timeline():
-    js = "import('./src/discord/timeline.ts').then(m => console.log(JSON.stringify({sfx: m.SFX, speed: m.CAM_SPEED})))"
+    js = f"import('./{ARGS.timeline}').then(m => console.log(JSON.stringify({{sfx: m.SFX, speed: m.CAM_SPEED, music: m.MUSIC ?? null}})))"
     out = subprocess.run(['node', '-e', js], capture_output=True, text=True, check=True).stdout
     return json.loads(out)
 
@@ -230,10 +237,36 @@ def sfx_swell(dur):
 
 MUSIC_GAIN = 0.55
 
+def sfx_bell(m):  # notification bell: two soft bell strikes a major third apart
+    out = np.zeros(int(1.4 * SR))
+    for k, iv in enumerate((4, 0)):
+        n = tone(midi(m + iv), 1.2, 4.0, ((1, 1.0), (2.76, 0.18), (5.4, 0.05)), 0.004) * (0.7 - k * 0.1)
+        i = int(k * 0.11 * SR)
+        out[i:i + len(n)] += n
+    return out * 0.6
+
+
+def sfx_coin(m):  # Super Chat: quick bright two-note sparkle
+    out = np.zeros(int(0.9 * SR))
+    for k, iv in enumerate((0, 7)):
+        n = tone(midi(m + 12 + iv), 0.7, 9.0, ((1, 1.0), (3, 0.12)), 0.002) * 0.6
+        i = int(k * 0.07 * SR)
+        out[i:i + len(n)] += n
+    return out
+
+
+def sfx_swipe():  # soft vertical swipe
+    d = 0.3
+    t = T(d)
+    n = fft_filter(sweep_noise(d, 2600, 700, 1.5), None, 3500)
+    return n * np.sin(np.pi * t / d) ** 2 * 0.55
+
+
 # per-type output level (linear). Deliberately low: these sit *under* the music, not on top of it.
 SFX_GAIN = {
     'pop': 0.16, 'pluck': 0.11, 'ding': 0.15, 'chime': 0.14, 'click': 0.16, 'tick': 0.08, 'toggle': 0.12,
     'alert': 0.12, 'send': 0.13, 'shimmer': 0.16, 'thump': 0.30, 'impact': 0.36, 'riser': 0.12, 'swell': 0.10,
+    'bell': 0.14, 'coin': 0.13, 'swipe': 0.12,
 }
 
 
@@ -268,6 +301,12 @@ def render_sfx(ev, t0):
         return sfx_riser(ev.get('dur', 1.0))
     if k == 'swell':
         return sfx_swell(ev.get('dur', 1.0))
+    if k == 'bell':
+        return sfx_bell(chord_tones(t0, st, 1))
+    if k == 'coin':
+        return sfx_coin(chord_tones(t0, st, 1))
+    if k == 'swipe':
+        return sfx_swipe()
     raise ValueError(k)
 
 
@@ -441,12 +480,9 @@ def conv(x, h):
     return np.fft.irfft(np.fft.rfft(x, nfft) * np.fft.rfft(h, nfft), nfft)[:len(x)]
 
 
-TARGET_LUFS = -16.0
-
-
 def write_wav(L, R):
     pcm = (np.clip(np.stack([L, R], axis=1), -1, 1) * 32767).astype('<i2')
-    with wave.open('public/discord-promo-music.wav', 'wb') as w:
+    with wave.open(ARGS.out + '.wav', 'wb') as w:
         w.setnchannels(2)
         w.setsampwidth(2)
         w.setframerate(SR)
@@ -454,7 +490,10 @@ def write_wav(L, R):
 
 
 def main():
+    global CHORDS
     tl = load_timeline()
+    if tl.get('music'):
+        CHORDS = [(list(c[0]), int(c[1])) for c in tl['music']['chords']]
     events = tl['sfx']
     mus = build_music()
     fx = Bus()
@@ -490,16 +529,21 @@ def main():
     write_wav(L, R)
     if shutil.which('ffmpeg'):
         # loudness-normalise to a comfortable -16 LUFS (measured with ffmpeg's EBU R128 meter)
-        meas = subprocess.run(['ffmpeg', '-hide_banner', '-i', 'public/discord-promo-music.wav', '-af', 'ebur128=framelog=quiet', '-f', 'null', '-'], capture_output=True, text=True).stderr
+        meas = subprocess.run(['ffmpeg', '-hide_banner', '-i', ARGS.out + '.wav', '-af', 'ebur128=framelog=quiet', '-f', 'null', '-'], capture_output=True, text=True).stderr
         lufs = float([ln for ln in meas.splitlines() if ln.strip().startswith('I:')][-1].split()[1])
-        g = 10 ** ((TARGET_LUFS - lufs) / 20)
+        g = 10 ** ((ARGS.lufs - lufs) / 20)
         write_wav(L * g, R * g)
-        print(f'loudness {lufs:.1f} LUFS -> {TARGET_LUFS} LUFS')
-    print(f'wrote public/discord-promo-music.wav  ({len(events)} sfx events)')
+        print(f'loudness {lufs:.1f} LUFS -> {ARGS.lufs} LUFS')
+    print(f'wrote {ARGS.out}.wav  ({len(events)} sfx events)')
     if shutil.which('ffmpeg'):
-        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', 'public/discord-promo-music.wav', '-c:a', 'libmp3lame', '-b:a', '320k', 'public/discord-promo-music.mp3'], check=True)
-        print('wrote public/discord-promo-music.mp3')
+        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', ARGS.out + '.wav', '-c:a', 'libmp3lame', '-b:a', '320k', ARGS.out + '.mp3'], check=True)
+        print(f'wrote {ARGS.out}.mp3')
 
 
 if __name__ == '__main__':
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--timeline', default=ARGS.timeline)
+    ap.add_argument('--out', default=ARGS.out, help='output path without extension')
+    ap.add_argument('--lufs', type=float, default=ARGS.lufs)
+    ARGS = ap.parse_args()
     main()
