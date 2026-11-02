@@ -3,6 +3,7 @@ import {Composition} from 'remotion';
 import {PassengerChart} from './PassengerChart';
 import {DiscordPromo} from './discord/DiscordPromo';
 import {YouTubePromo} from './youtube/YouTubePromo';
+import {YouTubeFilm} from './ytfilm/YouTubeFilm';
 
 export const RemotionRoot: React.FC = () => (
 	<>
@@ -25,6 +26,14 @@ export const RemotionRoot: React.FC = () => (
 		<Composition
 			id="YouTubePromo"
 			component={YouTubePromo}
+			durationInFrames={1800}
+			fps={30}
+			width={1920}
+			height={1080}
+		/>
+		<Composition
+			id="YouTubeFilm"
+			component={YouTubeFilm}
 			durationInFrames={1800}
 			fps={30}
 			width={1920}

@@ -398,7 +398,13 @@ def pluck(m):
     return _pl[m]
 
 
+SECTIONS = None  # optional per-bar arrangement from the timeline's MUSIC.sections
+END_CHORD = 0
+
+
 def section(b):
+    if SECTIONS:
+        return SECTIONS[b] if b < len(SECTIONS) else 'end'
     if b < 3:
         return 'intro'
     if b < 23:
@@ -431,7 +437,7 @@ def build_music():
         ci = b % 4
         notes, root = CHORDS[ci]
         if sec == 'end':
-            p = pad_bar(0, 0, BAR * 0.95), pad_bar(0, 1, BAR * 0.95)
+            p = pad_bar(END_CHORD, 0, BAR * 0.95), pad_bar(END_CHORD, 1, BAR * 0.95)
             i = int(t0 * SR)
             n = min(len(p[0]), N - i)
             padL[i:i + n] += p[0][:n] * 1.1
@@ -455,7 +461,7 @@ def build_music():
             for e in range(8):
                 m = root + (12 if e in (3, 7) else 0)
                 mus.place(bass_note(m, BEAT / 2), t0 + e * BEAT / 2, 0.4 if e % 2 else 0.28)
-        if sec == 'break' and b == 25:
+        if sec == 'break' and b + 1 < nbars and section(b + 1) in ('A', 'B'):
             for s16 in range(16):
                 mus.place(SN, t0 + s16 * BEAT / 4, 0.08 + 0.4 * (s16 / 15) ** 2)
         if sec in ('A', 'B', 'break') or (sec == 'intro' and b >= 1):
@@ -490,10 +496,12 @@ def write_wav(L, R):
 
 
 def main():
-    global CHORDS
+    global CHORDS, SECTIONS, END_CHORD
     tl = load_timeline()
     if tl.get('music'):
         CHORDS = [(list(c[0]), int(c[1])) for c in tl['music']['chords']]
+        SECTIONS = tl['music'].get('sections')
+        END_CHORD = int(tl['music'].get('endChord', 0))
     events = tl['sfx']
     mus = build_music()
     fx = Bus()
