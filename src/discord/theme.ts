@@ -40,6 +40,12 @@ export const C = {
 	idle: '#F0B232',
 	dnd: '#F23F43',
 	link: '#00A8FC',
+	// one-take canvas theme: Discord Blurple world, white type, not-quite-black ink
+	bg: '#5865F2',
+	bgHi: '#7C86F6',
+	bgLo: '#3F49C9',
+	ink: '#23272A',
+	shadow: 'rgba(16,20,82,0.45)',
 };
 
 // Discord's headline face is ABC Ginto Nord (wide, heavy grotesk) and UI face is gg sans.

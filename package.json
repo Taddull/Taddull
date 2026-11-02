@@ -6,8 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "studio": "remotion studio src/index.ts",
-    "music:discord": "python3 scripts/make_music.py",
-    "render:discord": "remotion render src/index.ts DiscordPromo out/discord-promo.mp4 --concurrency=4 --crf=20"
+    "render:discord": "remotion render src/index.ts DiscordPromo out/discord-promo.mp4 --concurrency=4 --crf=20",
+    "audio:discord": "python3 scripts/make_audio.py"
   },
   "repository": {
     "type": "git",

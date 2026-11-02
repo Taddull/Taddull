@@ -14,7 +14,7 @@ export const MacBook: React.FC<{children: React.ReactNode; style?: React.CSSProp
 				right: 40,
 				top: 940,
 				height: 70,
-				background: 'radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,0.75), rgba(0,0,0,0))',
+				background: 'radial-gradient(50% 50% at 50% 50%, rgba(16,20,82,0.6), rgba(16,20,82,0))',
 			}}
 		/>
 		{/* lid */}
@@ -28,7 +28,7 @@ export const MacBook: React.FC<{children: React.ReactNode; style?: React.CSSProp
 				borderRadius: '36px 36px 10px 10px',
 				background: 'linear-gradient(180deg, #121215, #070708)',
 				boxShadow:
-					'0 0 0 2px #5c5e66, 0 0 0 4px #1c1d21, 0 40px 90px rgba(0,0,0,0.6), inset 0 0 0 1.5px #26272c',
+					'0 0 0 2px #5c5e66, 0 0 0 4px #1c1d21, 0 40px 90px rgba(16,20,82,0.55), inset 0 0 0 1.5px #26272c',
 			}}
 		>
 			<div
@@ -151,7 +151,7 @@ export const IPhone: React.FC<{
 					borderRadius: 72,
 					background: frames[frame],
 					padding: 3,
-					boxShadow: '0 50px 100px rgba(0,0,0,0.6), 0 20px 40px rgba(0,0,0,0.4)',
+					boxShadow: '0 50px 100px rgba(16,20,82,0.55), 0 20px 40px rgba(16,20,82,0.35)',
 				}}
 			>
 				<div style={{width: '100%', height: '100%', borderRadius: 69, background: '#030303', padding: 14}}>
@@ -253,7 +253,7 @@ export const IPad: React.FC<{children: React.ReactNode; style?: React.CSSPropert
 				borderRadius: 54,
 				background: 'linear-gradient(135deg, #9a9ba0 0%, #3b3c40 25%, #707176 55%, #2a2b2e 80%, #85868b 100%)',
 				padding: 3,
-				boxShadow: '0 50px 110px rgba(0,0,0,0.6)',
+				boxShadow: '0 50px 110px rgba(16,20,82,0.55)',
 			}}
 		>
 			<div style={{width: '100%', height: '100%', borderRadius: 51, background: '#050505', padding: 27}}>

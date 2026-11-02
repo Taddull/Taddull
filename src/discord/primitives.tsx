@@ -1,7 +1,6 @@
 import React from 'react';
-import {AbsoluteFill, random} from 'remotion';
-import {BODY, C, EMOJI, display, easeOut, prog, lerp, spr, clamp} from './theme';
 import {interpolate} from 'remotion';
+import {BODY, C, EMOJI, display, easeInOut, prog, lerp, spr, clamp} from './theme';
 
 /* ---------------------------------------------------------------- Clyde */
 export const CLYDE_PATH =
@@ -18,7 +17,7 @@ export const Clyde: React.FC<{size: number; color?: string; style?: React.CSSPro
 );
 
 /* ---------------------------------------------------------------- Icons */
-type IconName =
+export type IconName =
 	| 'hash'
 	| 'speaker'
 	| 'mic'
@@ -370,115 +369,9 @@ export const Sparkle: React.FC<{size: number; color?: string; style?: React.CSSP
 	</svg>
 );
 
-/* ---------------------------------------------------------------- Background */
-const STARS = new Array(150).fill(0).map((_, i) => ({
-	x: random(`sx${i}`) * 1920,
-	y: random(`sy${i}`) * 1080,
-	s: 0.8 + random(`ss${i}`) * 2.2,
-	ph: random(`sp${i}`) * Math.PI * 2,
-	sp: 0.03 + random(`sv${i}`) * 0.06,
-	d: 0.2 + random(`sd${i}`) * 0.8,
-}));
-const SPARKS = new Array(9).fill(0).map((_, i) => ({
-	x: 80 + random(`kx${i}`) * 1760,
-	y: 60 + random(`ky${i}`) * 960,
-	s: 10 + random(`ks${i}`) * 18,
-	ph: random(`kp${i}`) * 100,
-}));
-
-export const SpaceBg: React.FC<{
-	f: number;
-	a?: string;
-	b?: string;
-	grid?: boolean;
-	drift?: number;
-}> = ({f, a = C.blurple, b = C.fuchsia, grid = true, drift = 1}) => {
-	const t = f / 30;
-	return (
-		<AbsoluteFill style={{background: `radial-gradient(120% 90% at 50% 120%, #1B1F7A 0%, #0B0D2E 45%, ${C.space} 100%)`, overflow: 'hidden'}}>
-			<div
-				style={{
-					position: 'absolute',
-					width: 1400,
-					height: 1400,
-					left: -300 + Math.sin(t * 0.4) * 120,
-					top: -700 + Math.cos(t * 0.3) * 80,
-					background: `radial-gradient(closest-side, ${a}88, ${a}00)`,
-					opacity: 0.85,
-				}}
-			/>
-			<div
-				style={{
-					position: 'absolute',
-					width: 1300,
-					height: 1300,
-					right: -420 + Math.cos(t * 0.35) * 140,
-					bottom: -760 + Math.sin(t * 0.25) * 90,
-					background: `radial-gradient(closest-side, ${b}66, ${b}00)`,
-					opacity: 0.9,
-				}}
-			/>
-			<div
-				style={{
-					position: 'absolute',
-					width: 900,
-					height: 900,
-					left: 760 + Math.sin(t * 0.5 + 1) * 160,
-					top: 300 + Math.cos(t * 0.45) * 100,
-					background: `radial-gradient(closest-side, ${C.blurpleDeep}55, transparent)`,
-				}}
-			/>
-			{grid && (
-				<div
-					style={{
-						position: 'absolute',
-						inset: -80,
-						backgroundImage:
-							'linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px)',
-						backgroundSize: '80px 80px',
-						backgroundPosition: `${(-t * 12 * drift) % 80}px ${(-t * 6 * drift) % 80}px`,
-						WebkitMaskImage: 'radial-gradient(70% 60% at 50% 50%, #000 0%, transparent 100%)',
-						maskImage: 'radial-gradient(70% 60% at 50% 50%, #000 0%, transparent 100%)',
-					}}
-				/>
-			)}
-			{STARS.map((s, i) => {
-				const tw = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(f * s.sp + s.ph));
-				return (
-					<div
-						key={i}
-						style={{
-							position: 'absolute',
-							left: (s.x - t * 8 * s.d * drift + 1920) % 1920,
-							top: s.y,
-							width: s.s,
-							height: s.s,
-							borderRadius: '50%',
-							background: '#fff',
-							opacity: tw * (0.3 + s.d * 0.5),
-						}}
-					/>
-				);
-			})}
-			{SPARKS.map((s, i) => {
-				const tw = 0.5 + 0.5 * Math.sin((f + s.ph) * 0.06);
-				return (
-					<Sparkle
-						key={i}
-						size={s.s * (0.6 + tw * 0.5)}
-						color="#C9CDFB"
-						style={{position: 'absolute', left: s.x, top: s.y, opacity: 0.15 + tw * 0.5, transform: `rotate(${f * 0.5 + i * 20}deg)`}}
-					/>
-				);
-			})}
-			<AbsoluteFill style={{background: 'radial-gradient(90% 80% at 50% 50%, transparent 55%, rgba(0,0,0,0.55) 100%)'}} />
-		</AbsoluteFill>
-	);
-};
-
 /* ---------------------------------------------------------------- Kinetic type */
-export const GRAD = `linear-gradient(92deg, #8EA1FF 0%, ${C.blurple} 35%, ${C.fuchsia} 100%)`;
-
+/** Word-by-word masked reveal. Highlighted words get a white "marker chip" that wipes in
+ *  behind them and flips the text to Blurple. */
 export const Reveal: React.FC<{
 	text: string;
 	f: number;
@@ -487,12 +380,13 @@ export const Reveal: React.FC<{
 	dur?: number;
 	style?: React.CSSProperties;
 	hl?: string[];
-	hlBg?: string;
 	align?: 'left' | 'center' | 'right';
-	out?: number; // frame to start exit
-}> = ({text, f, start, stagger = 3, dur = 22, style, hl = [], hlBg = GRAD, align = 'left', out}) => {
+	chipColor?: string;
+	chipText?: string;
+}> = ({text, f, start, stagger = 3, dur = 20, style, hl = [], align = 'left', chipColor = '#fff', chipText = C.bg}) => {
 	let idx = 0;
 	const lines = text.split('\n');
+	const total = text.split(/\s+/).length;
 	return (
 		<div style={{textAlign: align, ...style}}>
 			{lines.map((line, li) => (
@@ -500,35 +394,41 @@ export const Reveal: React.FC<{
 					{line.split(' ').map((w, wi) => {
 						const i = idx++;
 						const p = prog(f, start + i * stagger, start + i * stagger + dur);
-						const o = out !== undefined ? prog(f, out + i * 1.5, out + i * 1.5 + 14) : 0;
-						const isHl = hl.includes(w.replace(/[.,!?]/g, ''));
+						const isHl = hl.includes(w.replace(/[.,!?…]/g, ''));
+						const chipAt = start + total * stagger + 4 + i * 2;
+						const c = isHl ? prog(f, chipAt, chipAt + 14, easeInOut) : 0;
 						return (
 							<span
 								key={wi}
 								style={{
+									position: 'relative',
 									display: 'inline-block',
 									overflow: 'hidden',
 									verticalAlign: 'top',
-									padding: '0.06em 0.04em 0.1em',
-									margin: '-0.06em 0.24em -0.1em 0',
+									padding: '0.08em 0.14em 0.1em',
+									margin: '-0.08em 0.1em -0.1em -0.14em',
 								}}
 							>
-								<span
-									style={{
-										display: 'inline-block',
-										transform: `translateY(${(1 - p) * 110 - o * 110}%) rotate(${(1 - p) * 6}deg)`,
-										transformOrigin: 'left bottom',
-										...(isHl
-											? {
-													backgroundImage: hlBg,
-													WebkitBackgroundClip: 'text',
-													backgroundClip: 'text',
-													color: 'transparent',
-												}
-											: {}),
-									}}
-								>
+								{isHl && (
+									<span
+										style={{
+											position: 'absolute',
+											left: 0,
+											top: '0.06em',
+											bottom: '0.04em',
+											width: '100%',
+											borderRadius: '0.14em',
+											background: chipColor,
+											transform: `scaleX(${c})`,
+											transformOrigin: 'left center',
+										}}
+									/>
+								)}
+								<span style={{position: 'relative', display: 'inline-block', transform: `translateY(${(1 - p) * 115}%) rotate(${(1 - p) * 5}deg)`, transformOrigin: 'left bottom'}}>
 									{w}
+									{isHl && (
+										<span style={{position: 'absolute', left: 0, top: 0, color: chipText, clipPath: `inset(-10% ${(1 - c) * 100}% -10% 0)`}}>{w}</span>
+									)}
 								</span>
 							</span>
 						);
@@ -539,83 +439,59 @@ export const Reveal: React.FC<{
 	);
 };
 
-export const FadeUp: React.FC<{
-	f: number;
-	start: number;
-	dist?: number;
-	dur?: number;
-	children: React.ReactNode;
-	style?: React.CSSProperties;
-	blur?: boolean;
-}> = ({f, start, dist = 30, dur = 20, children, style, blur = false}) => {
+export const FadeUp: React.FC<{f: number; start: number; dist?: number; dur?: number; children: React.ReactNode; style?: React.CSSProperties}> = ({
+	f,
+	start,
+	dist = 26,
+	dur = 18,
+	children,
+	style,
+}) => {
 	const p = prog(f, start, start + dur);
-	return (
-		<div
-			style={{
-				opacity: p,
-				transform: `translateY(${(1 - p) * dist}px)`,
-				filter: blur && p < 1 ? `blur(${(1 - p) * 8}px)` : undefined,
-				...style,
-			}}
-		>
-			{children}
-		</div>
-	);
+	return <div style={{opacity: p, transform: `translateY(${(1 - p) * dist}px)`, ...style}}>{children}</div>;
 };
 
-export const Eyebrow: React.FC<{
-	f: number;
-	start: number;
-	label: string;
-	num?: string;
-	color?: string;
-	icon?: IconName;
-}> = ({f, start, label, num, color = C.blurple, icon = 'bolt'}) => {
-	const s = spr(f, start, {damping: 16});
-	const w = prog(f, start + 4, start + 26);
+export const Eyebrow: React.FC<{f: number; start: number; label: string; num?: string; icon?: IconName; color?: string}> = ({
+	f,
+	start,
+	label,
+	num,
+	icon = 'bolt',
+	color = C.bg,
+}) => {
+	const s = spr(f, start, {damping: 15, stiffness: 170});
+	const w = prog(f, start + 3, start + 20);
 	return (
 		<div
 			style={{
 				display: 'inline-flex',
 				alignItems: 'center',
-				gap: 14,
-				padding: '8px 22px 8px 8px',
+				gap: 12,
+				padding: '7px 22px 7px 7px',
 				borderRadius: 999,
-				background: 'rgba(255,255,255,0.06)',
-				border: `1.5px solid ${color}88`,
-				boxShadow: `0 0 30px ${color}33, inset 0 0 20px ${color}22`,
-				transform: `scale(${lerp(0.6, 1, s)})`,
+				background: 'rgba(255,255,255,0.16)',
+				border: '1.5px solid rgba(255,255,255,0.4)',
+				transform: `scale(${lerp(0.5, 1, s)})`,
 				transformOrigin: 'left center',
-				opacity: Math.min(1, s * 1.5),
+				opacity: Math.min(1, s * 1.6),
 			}}
 		>
-			<div
-				style={{
-					width: 38,
-					height: 38,
-					borderRadius: 999,
-					background: color,
-					display: 'flex',
-					alignItems: 'center',
-					justifyContent: 'center',
-					color: color === C.yellow || color === C.green ? C.black : '#fff',
-				}}
-			>
-				<Icon name={icon} size={22} />
+			<div style={{width: 36, height: 36, borderRadius: 999, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+				<Icon name={icon} size={21} color={color} />
 			</div>
 			<div
 				style={{
 					fontFamily: BODY,
 					fontWeight: 800,
-					fontSize: 20,
+					fontSize: 19,
 					letterSpacing: '0.16em',
 					textTransform: 'uppercase',
-					color: '#E3E5FF',
+					color: '#fff',
 					clipPath: `inset(0 ${(1 - w) * 100}% 0 0)`,
 					whiteSpace: 'nowrap',
 				}}
 			>
-				{num && <span style={{color, marginRight: 12}}>{num}</span>}
+				{num && <span style={{opacity: 0.6, marginRight: 12}}>{num}</span>}
 				{label}
 			</div>
 		</div>
@@ -626,44 +502,50 @@ export const Body: React.FC<{f: number; start: number; children: React.ReactNode
 	f,
 	start,
 	children,
-	w = 640,
-	size = 28,
+	w = 620,
+	size = 26,
 	align = 'left',
 }) => (
-	<FadeUp f={f} start={start} dist={24} dur={24}>
-		<div style={{fontFamily: BODY, fontWeight: 500, fontSize: size, lineHeight: 1.45, color: '#B9BEE8', maxWidth: w, textAlign: align}}>
+	<FadeUp f={f} start={start}>
+		<div style={{fontFamily: BODY, fontWeight: 500, fontSize: size, lineHeight: 1.45, color: 'rgba(255,255,255,0.9)', maxWidth: w, textAlign: align}}>
 			{children}
 		</div>
 	</FadeUp>
 );
 
-/* Pill/badge used for floating callouts */
-export const Callout: React.FC<{
+/** Floating card that springs in and gently bobs. White by default (on Blurple), or dark UI. */
+export const Card: React.FC<{
 	f: number;
-	start: number;
+	at: number;
+	x: number;
+	y: number;
 	children: React.ReactNode;
-	style?: React.CSSProperties;
+	dark?: boolean;
 	float?: number;
-}> = ({f, start, children, style, float = 0}) => {
-	const s = spr(f, start, {damping: 13, stiffness: 160});
-	const bob = Math.sin((f + float * 30) / 22) * 6;
+	radius?: number;
+	style?: React.CSSProperties;
+}> = ({f, at, x, y, children, dark, float = 0, radius = 20, style}) => {
+	const s = spr(f, at, {damping: 13, stiffness: 170});
+	const bob = Math.sin((f + float * 40) / 24) * 6;
 	return (
 		<div
 			style={{
 				position: 'absolute',
-				transform: `translateY(${bob}px) scale(${s})`,
-				opacity: interpolate(s, [0, 0.4], [0, 1], clamp),
+				left: x,
+				top: y,
+				transform: `translateY(${bob + (1 - Math.min(1, s)) * 30}px) scale(${lerp(0.6, 1, s)})`,
+				opacity: interpolate(s, [0, 0.35], [0, 1], clamp),
 				...style,
 			}}
 		>
 			<div
 				style={{
-					background: 'rgba(30,31,34,0.92)',
-					border: '1px solid rgba(255,255,255,0.10)',
-					borderRadius: 18,
-					boxShadow: '0 24px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.3)',
+					background: dark ? '#1E1F22' : '#fff',
+					color: dark ? C.text : C.ink,
+					borderRadius: radius,
+					boxShadow: `0 26px 60px ${C.shadow}, 0 2px 0 rgba(255,255,255,0.4) inset`,
 					fontFamily: BODY,
-					color: C.text,
+					overflow: 'hidden',
 				}}
 			>
 				{children}
@@ -673,4 +555,3 @@ export const Callout: React.FC<{
 };
 
 export const titleStyle = (size = 92): React.CSSProperties => ({...display(size), color: '#fff'});
-export {easeOut};

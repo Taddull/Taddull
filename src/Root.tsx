@@ -16,7 +16,7 @@ export const RemotionRoot: React.FC = () => (
 		<Composition
 			id="DiscordPromo"
 			component={DiscordPromo}
-			durationInFrames={3600}
+			durationInFrames={1800}
 			fps={30}
 			width={1920}
 			height={1080}
