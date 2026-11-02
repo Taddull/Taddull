@@ -1,211 +1,235 @@
-/* Single source of truth for the one-take camera, the per-station animation cues and the
- * SFX track. Pure TS with no imports so scripts/make_audio.py can load it via `node`.
- * 30 fps, 120 BPM -> 1 beat = 15 frames, 1 bar = 60 frames. */
+/* Single source of truth for the 3D one-take: camera path, per-station animation cues and the SFX
+ * list. Pure TS with no imports so scripts/make_audio.py can load it via `node`.
+ * 30 fps, 120 BPM -> 1 beat = 15 frames, 8th = 7.5, 16th = 3.75, 1 bar = 60 frames.
+ * Every audible cue sits on the 8th/16th-note grid so SFX land in time with the music. */
 
 export const FPS = 30;
 export const DURATION = 1800; // 60 s
-export const SX = 2200; // world spacing between stations
+export const PERSPECTIVE = 1600; // CSS perspective (px) -> ~62° horizontal FOV
+export const SX = 2200; // station spacing on the gallery wall
 export const SY = 1250;
 
 export type StationId = 'intro' | 'hero' | 'app' | 'voice' | 'live' | 'devices' | 'apps' | 'roles' | 'cta';
 
-/* arrive = frame the camera settles on the station */
+/* arrive = frame the camera reaches the station (multiples of 15 = on the beat) */
 export const STATIONS: Record<StationId, {col: number; row: number; arrive: number}> = {
 	intro: {col: 0, row: 0, arrive: 0},
-	hero: {col: 1, row: 0, arrive: 180},
-	app: {col: 2, row: 0, arrive: 360},
-	voice: {col: 2, row: 1, arrive: 660},
-	live: {col: 2, row: 2, arrive: 810},
-	devices: {col: 1, row: 2, arrive: 990},
-	apps: {col: 0, row: 2, arrive: 1110},
-	roles: {col: 0, row: 1, arrive: 1290},
+	hero: {col: 1, row: 0, arrive: 195},
+	app: {col: 2, row: 0, arrive: 375},
+	voice: {col: 2, row: 1, arrive: 750},
+	live: {col: 2, row: 2, arrive: 930},
+	devices: {col: 1, row: 2, arrive: 1050}, // built while the camera flies past
+	apps: {col: 0, row: 2, arrive: 1170},
+	roles: {col: 0, row: 1, arrive: 1320},
 	cta: {col: 1, row: 1, arrive: 1560},
 };
-export const CHAT_ARRIVE = 510; // camera pans across the same MacBook from servers to chat
+export const CHAT_ARRIVE = 555; // second half of the app station (same MacBook)
 
 export const center = (id: StationId) => ({x: STATIONS[id].col * SX, y: STATIONS[id].row * SY});
 
-/* ---------------------------------------------------------------- camera */
-export type Ease = 'drift' | 'move' | 'zoom';
-export type Key = {f: number; x: number; y: number; z: number; ease?: Ease};
-
-const c = center;
-export const CAMERA: Key[] = [
-	{f: 0, ...c('intro'), z: 1},
-	{f: 144, ...c('intro'), z: 1.06, ease: 'drift'},
-	{f: 180, ...c('hero'), z: 1, ease: 'move'},
-	{f: 324, ...c('hero'), z: 1.05, ease: 'drift'},
-	{f: 360, x: c('app').x - 440, y: 0, z: 1.06, ease: 'move'},
-	{f: 474, x: c('app').x - 420, y: 0, z: 1.09, ease: 'drift'},
-	{f: CHAT_ARRIVE, x: c('app').x + 420, y: 0, z: 1.08, ease: 'move'},
-	{f: 624, x: c('app').x + 400, y: 0, z: 1.11, ease: 'drift'},
-	{f: 660, ...c('voice'), z: 1, ease: 'move'},
-	{f: 774, ...c('voice'), z: 1.05, ease: 'drift'},
-	{f: 810, ...c('live'), z: 1, ease: 'move'},
-	{f: 954, ...c('live'), z: 1.04, ease: 'drift'},
-	{f: 990, ...c('devices'), z: 1, ease: 'move'},
-	{f: 1074, ...c('devices'), z: 1.03, ease: 'drift'},
-	{f: 1110, ...c('apps'), z: 1, ease: 'move'},
-	{f: 1254, ...c('apps'), z: 1.04, ease: 'drift'},
-	{f: 1290, ...c('roles'), z: 1, ease: 'move'},
-	{f: 1404, ...c('roles'), z: 1.04, ease: 'drift'},
-	{f: 1470, x: SX + 185, y: SY, z: 0.27, ease: 'zoom'},
-	{f: 1520, x: SX + 185, y: SY, z: 0.282, ease: 'drift'},
-	{f: 1560, ...c('cta'), z: 1, ease: 'zoom'},
-	{f: DURATION, ...c('cta'), z: 1.07, ease: 'drift'},
-];
-
 /* ---------------------------------------------------------------- cues (frames relative to arrival) */
 export const CUES = {
-	intro: {words: [15, 30, 45], sub: 55, wordsOut: 76, logo: 90, wordmark: 100, tagline: 116},
-	hero: {title: -22, mac: -32, phoneL: -18, phoneR: -10, online: 40, joined: 62, msg: 70, react: [95, 102]},
-	servers: {mac: -34, eyebrow: -20, title: -14, rail: 6, railStep: 3, rows: 30, card: 58, cursorIn: 62, click: 96},
-	chat: {eyebrow: -16, title: -12, msgs: [8, 34, 60], reacts: [24, 28, 80, 86, 92], emojiBar: 40, typeFrom: 66, typeTo: 96, send: 104},
-	voice: {eyebrow: -20, title: -16, phoneA: -32, phoneB: -24, tiles: 6, tileStep: 5, joins: [12, 30, 48, 66], callout: 76},
-	live: {eyebrow: -22, title: -18, mac: -32, phone: -8, picker: 40, click4k: 70, click60: 92, event: 56, interested: 112},
+	intro: {words: [15, 30, 45], sub: 60, wordsOut: 75, logo: 90, wordmark: 105, tagline: 120},
+	hero: {title: -30, mac: -30, phoneL: -15, phoneR: -8, online: 30, joined: 52.5, msg: 75, react: [90, 97.5]},
+	servers: {mac: -45, eyebrow: -30, title: -22, rail: 0, railStep: 3.75, rows: 30, card: 75, cursorIn: 90, click: 120},
+	chat: {eyebrow: -22, title: -15, msgs: [15, 45, 75], reacts: [30, 37.5, 90, 97.5, 105], emojiBar: 60, typeFrom: 105, typeTo: 135, send: 142.5},
+	voice: {eyebrow: -30, title: -22, phoneA: -45, phoneB: -30, tiles: 0, tileStep: 3.75, joins: [15, 37.5, 60, 82.5], callout: 97.5},
+	live: {eyebrow: -30, title: -22, mac: -45, phone: -15, picker: 15, click4k: 45, click60: 67.5, event: 60, interested: 120},
 	devices: {rise: [-34, -28, -22, -16], eyebrow: -22, title: -18, chips: 8, chipStep: 3, typeFrom: 18, typeTo: 48, send: 54, arrive: 70},
-	apps: {mac: -32, eyebrow: -22, title: -18, typeFrom: 4, typeTo: 18, popup: 22, sel: [34, 44], enter: 58, poll: 62, fillFrom: 70, fillTo: 128, nitro: -20, perks: 26, perkStep: 6, superReact: 104},
-	roles: {mac: -34, eyebrow: -22, title: -18, list: 4, toggles: [30, 48, 66, 84], automod: 98},
-	overview: {start: 1404, title: 1438, settle: 1470, dive: 1520},
-	cta: {logo: -32, wordmark: -24, line: -4, land: 0, buttons: [10, 16], url: 28, cursorIn: 46, click: 92, done: 98},
+	apps: {mac: -45, eyebrow: -30, title: -22, typeFrom: 0, typeTo: 15, popup: 22.5, sel: [30, 37.5], enter: 52.5, poll: 60, fillFrom: 67.5, fillTo: 127.5, nitro: -30, perks: 75, perkStep: 7.5, superReact: 105},
+	roles: {mac: -45, eyebrow: -30, title: -22, list: 0, toggles: [30, 45, 60, 75], automod: 90},
+	overview: {start: 1410, title: 1440, settle: 1470, dive: 1515},
+	cta: {logo: -45, wordmark: -37.5, line: 0, land: 0, buttons: [15, 22.5], url: 37.5, cursorIn: 52, click: 90, done: 97.5},
 };
 
-/* ---------------------------------------------------------------- SFX track */
-export type Sfx = {f: number; type: string; gain?: number; pan?: number; pitch?: number; dur?: number};
+/* ---------------------------------------------------------------- 3D orbit camera
+ * The camera orbits a target point T at distance d, azimuth yaw (deg, + = camera to the right),
+ * elevation pitch (deg, + = camera above) and roll. Keys are joined with monotone cubic splines
+ * (C1-continuous, no overshoot) so the camera never stops dead and never wobbles past a key. */
+export type CamKey = {f: number; x: number; y: number; z?: number; d: number; yaw: number; pitch: number; roll?: number};
+
+export const CAMERA: CamKey[] = [
+	{f: 0, x: 60, y: -20, d: 1950, yaw: -9, pitch: 6, roll: -2},
+	{f: 75, x: 20, y: -10, d: 1800, yaw: -4, pitch: 3, roll: -1},
+	{f: 150, x: 0, y: 40, d: 1550, yaw: 10, pitch: 2, roll: 1},
+	// hero: approach from the left, orbit to the right, push in
+	{f: 190, x: 2150, y: -30, d: 1800, yaw: -18, pitch: 6},
+	{f: 255, x: 2200, y: -10, d: 1650, yaw: -5, pitch: 4},
+	{f: 330, x: 2260, y: 140, d: 1300, yaw: 10, pitch: 5},
+	// servers: wide, then dive into the server rail + channel menu, glide down it, up to the invite card
+	{f: 385, x: 4120, y: 0, d: 1400, yaw: 16, pitch: 3, roll: 1},
+	{f: 430, x: 4072, y: -40, d: 860, yaw: 22, pitch: 4, roll: 1},
+	{f: 468, x: 4090, y: 120, d: 820, yaw: 18, pitch: 1},
+	{f: 498, x: 4600, y: -220, d: 980, yaw: 6, pitch: -4},
+	// chat: wide with headline, close on the messages, down to the composer
+	{f: 560, x: 5000, y: 10, d: 1350, yaw: -10, pitch: 2, roll: -1},
+	{f: 640, x: 4520, y: 90, d: 960, yaw: -18, pitch: 4, roll: -1},
+	{f: 700, x: 4600, y: 230, d: 1000, yaw: -10, pitch: 8},
+	// voice
+	{f: 760, x: 4500, y: 1260, d: 1550, yaw: -14, pitch: 4},
+	{f: 830, x: 4989, y: 1270, d: 1200, yaw: -20, pitch: 2, roll: -1},
+	{f: 885, x: 4900, y: 1250, d: 1100, yaw: -8, pitch: 4},
+	// go live + events: close on the quality picker for the clicks, then the event card
+	{f: 940, x: 4300, y: 2420, d: 1500, yaw: 12, pitch: 6, roll: 1},
+	{f: 978, x: 3680, y: 2475, d: 760, yaw: 20, pitch: 4, roll: 1},
+	{f: 1040, x: 3940, y: 2800, d: 920, yaw: 12, pitch: 9},
+	{f: 1078, x: 4080, y: 2560, d: 1450, yaw: 0, pitch: 5},
+	// fly past the "every device" station
+	{f: 1125, x: 2200, y: 2520, d: 1800, yaw: -12, pitch: 5, roll: 2},
+	// apps + nitro
+	{f: 1180, x: 100, y: 2480, d: 1500, yaw: 10, pitch: 5},
+	{f: 1228, x: -340, y: 2640, d: 860, yaw: 18, pitch: 7, roll: 1},
+	{f: 1278, x: 600, y: 2500, d: 1050, yaw: -14, pitch: 3, roll: -1},
+	// roles: wide, then close on the permission toggles
+	{f: 1328, x: 220, y: 1200, d: 1400, yaw: -12, pitch: 2},
+	{f: 1368, x: 114, y: 1151, d: 780, yaw: 18, pitch: 4, roll: 1},
+	{f: 1402, x: 150, y: 1190, d: 850, yaw: 24, pitch: 6, roll: 1},
+	// crane back for the overview, slow orbit, dive into the CTA
+	{f: 1470, x: 2385, y: 1300, d: 6400, yaw: 26, pitch: 12, roll: -2},
+	{f: 1512, x: 2385, y: 1300, d: 6100, yaw: 20, pitch: 9, roll: -1},
+	{f: 1560, x: 2200, y: 1250, d: 1600, yaw: 0, pitch: 0},
+	{f: 1680, x: 2200, y: 1260, d: 1500, yaw: -4, pitch: 2},
+	{f: DURATION, x: 2200, y: 1250, d: 1420, yaw: 3, pitch: 1},
+];
+
+/* Fritsch–Carlson monotone cubic interpolation over non-uniform keys */
+const monotone = (xs: number[], ys: number[]) => {
+	const n = xs.length;
+	const h = xs.slice(1).map((x, i) => x - xs[i]);
+	const dl = h.map((hi, i) => (ys[i + 1] - ys[i]) / hi);
+	const m = new Array(n).fill(0);
+	for (let i = 1; i < n - 1; i++) {
+		if (dl[i - 1] * dl[i] <= 0) continue;
+		const w1 = 2 * h[i] + h[i - 1];
+		const w2 = h[i] + 2 * h[i - 1];
+		m[i] = (w1 + w2) / (w1 / dl[i - 1] + w2 / dl[i]);
+	}
+	return (x: number) => {
+		if (x <= xs[0]) return ys[0];
+		if (x >= xs[n - 1]) return ys[n - 1];
+		let i = 0;
+		while (xs[i + 1] < x) i++;
+		const t = (x - xs[i]) / h[i];
+		const t2 = t * t;
+		const t3 = t2 * t;
+		return (2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * h[i] * m[i] + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * h[i] * m[i + 1];
+	};
+};
+
+const fs = CAMERA.map((k) => k.f);
+const S = {
+	x: monotone(fs, CAMERA.map((k) => k.x)),
+	y: monotone(fs, CAMERA.map((k) => k.y)),
+	z: monotone(fs, CAMERA.map((k) => k.z ?? 0)),
+	ld: monotone(fs, CAMERA.map((k) => Math.log(k.d))),
+	yaw: monotone(fs, CAMERA.map((k) => k.yaw)),
+	pitch: monotone(fs, CAMERA.map((k) => k.pitch)),
+	roll: monotone(fs, CAMERA.map((k) => k.roll ?? 0)),
+};
+
+export type Cam = {x: number; y: number; z: number; d: number; yaw: number; pitch: number; roll: number};
+export const sampleCam = (f: number): Cam => ({
+	x: S.x(f),
+	y: S.y(f),
+	z: S.z(f),
+	d: Math.exp(S.ld(f)),
+	yaw: S.yaw(f),
+	pitch: S.pitch(f),
+	roll: S.roll(f),
+});
+
+/* approximate on-screen motion (px/frame) — drives the "air" whoosh layer in the audio */
+export const CAM_SPEED: number[] = (() => {
+	const out: number[] = [];
+	for (let f = 0; f < DURATION; f++) {
+		const a = sampleCam(f);
+		const b = sampleCam(f + 1);
+		const pan = (Math.hypot(b.x - a.x, b.y - a.y) * PERSPECTIVE) / a.d;
+		const ang = ((Math.abs(b.yaw - a.yaw) + Math.abs(b.pitch - a.pitch) + Math.abs(b.roll - a.roll)) * Math.PI) / 180 * PERSPECTIVE * 0.6;
+		const zoom = Math.abs(Math.log(b.d) - Math.log(a.d)) * 960;
+		out.push(pan + ang + zoom);
+	}
+	return out;
+})();
+
+/* ---------------------------------------------------------------- SFX (sparse, soft, tuned) */
+export type Sfx = {f: number; type: string; gain?: number; pan?: number; step?: number; dur?: number};
 
 const A = (id: StationId) => STATIONS[id].arrive;
 
 const buildSfx = (): Sfx[] => {
 	const s: Sfx[] = [];
-	const add = (f: number, type: string, o: Omit<Sfx, 'f' | 'type'> = {}) => s.push({f: Math.round(f), type, ...o});
+	// step = scale degree offset used to pick a chord tone, so repeated UI sounds form little melodies
+	const add = (f: number, type: string, o: Omit<Sfx, 'f' | 'type'> = {}) => s.push({f, type, ...o});
 
-	// camera moves: whoosh peaking on arrival, panned in the direction of travel
-	for (let i = 1; i < CAMERA.length; i++) {
-		const k = CAMERA[i];
-		const p = CAMERA[i - 1];
-		if (k.ease === 'move') add(p.f, 'whoosh', {dur: (k.f - p.f) / FPS, pan: Math.sign(k.x - p.x) * 0.6, gain: 0.9});
-	}
-
-	// intro
 	const I = CUES.intro;
-	I.words.forEach((w, i) => add(w, 'thump', {pitch: 1 + i * 0.12}));
-	add(I.sub - 4, 'swish', {gain: 0.5});
-	add(I.logo - 42, 'riser', {dur: 42 / FPS, gain: 0.7});
+	I.words.forEach((w, i) => add(w, 'thump', {step: i}));
+	add(I.logo - 30, 'riser', {dur: 1});
 	add(I.logo, 'impact');
-	add(I.wordmark, 'swish', {gain: 0.7});
-	add(I.wordmark + 6, 'shimmer', {gain: 0.6});
-	add(I.tagline, 'swish', {gain: 0.45, pan: 0.2});
+	add(I.wordmark, 'shimmer', {gain: 0.6});
 
-	// hero
 	const H = CUES.hero;
 	const h = A('hero');
-	add(h + H.title, 'swish', {gain: 0.5});
-	add(h + H.phoneL, 'swish', {gain: 0.45, pan: -0.5});
-	add(h + H.phoneR, 'swish', {gain: 0.45, pan: 0.5});
-	add(h + H.online, 'pop', {pitch: 1.1});
-	add(h + H.joined, 'join', {pan: -0.4});
-	add(h + H.msg, 'ding', {gain: 0.55});
-	H.react.forEach((r, i) => add(h + r, 'pop', {pitch: 1.2 + i * 0.15, gain: 0.7}));
+	add(h + H.online, 'pop', {step: 0, pan: 0.4});
+	add(h + H.joined, 'chime', {pan: -0.4});
+	add(h + H.msg, 'ding');
+	add(h + H.react[0], 'pop', {step: 2});
 
-	// servers
-	const S = CUES.servers;
+	const Sv = CUES.servers;
 	const a = A('app');
-	add(a + S.eyebrow, 'pop', {pitch: 0.9, pan: -0.3});
-	add(a + S.title, 'swish', {gain: 0.5, pan: -0.3});
-	for (let i = 0; i < 10; i++) add(a + S.rail + i * S.railStep, 'pop', {pitch: 0.8 + i * 0.07, gain: 0.55, pan: -0.2});
-	add(a + S.rows, 'swish', {gain: 0.35});
-	add(a + S.card, 'pop', {pitch: 1.0, pan: 0.4});
-	add(a + S.click, 'click', {pan: 0.4});
-	add(a + S.click + 4, 'ding', {gain: 0.6, pan: 0.4});
+	for (let i = 0; i < 10; i++) add(a + Sv.rail + i * Sv.railStep, 'pluck', {step: i, pan: -0.3, gain: 0.8});
+	add(a + Sv.card, 'pop', {step: 1, pan: 0.3});
+	add(a + Sv.click, 'click', {pan: 0.3});
+	add(a + Sv.click + 7.5, 'chime', {pan: 0.3});
 
-	// chat
 	const Ch = CUES.chat;
-	const ch = CHAT_ARRIVE;
-	add(ch + Ch.eyebrow, 'pop', {pitch: 0.9, pan: 0.4});
-	add(ch + Ch.title, 'swish', {gain: 0.5, pan: 0.4});
-	Ch.msgs.forEach((m) => add(ch + m, 'ding', {gain: 0.6}));
-	Ch.reacts.forEach((r, i) => add(ch + r, 'pop', {pitch: 1.1 + (i % 3) * 0.12, gain: 0.6}));
-	add(ch + Ch.emojiBar, 'pop', {pitch: 1.3, pan: -0.4});
-	for (let t = Ch.typeFrom; t < Ch.typeTo; t += 2.2) add(ch + t, 'key', {gain: 0.5, pitch: 0.9 + ((t * 7) % 5) / 10});
-	add(ch + Ch.send, 'click', {gain: 0.7});
-	add(ch + Ch.send + 2, 'send');
+	const c = CHAT_ARRIVE;
+	Ch.msgs.forEach((m, i) => add(c + m, 'ding', {step: i}));
+	add(c + Ch.reacts[0], 'pop', {step: 2});
+	add(c + Ch.emojiBar, 'pop', {step: 4, pan: 0.3});
+	add(c + Ch.reacts[2], 'pop', {step: 3});
+	add(c + Ch.send, 'send');
 
-	// voice
 	const V = CUES.voice;
 	const v = A('voice');
-	add(v + V.eyebrow, 'pop', {pitch: 0.9, pan: -0.4});
-	add(v + V.title, 'swish', {gain: 0.5, pan: -0.4});
-	for (let i = 0; i < 6; i++) add(v + V.tiles + i * V.tileStep, 'pop', {pitch: 0.9 + i * 0.08, gain: 0.45, pan: 0.5});
-	V.joins.forEach((j, i) => add(v + j, 'join', {pan: 0.2, pitch: 1 + i * 0.05}));
-	add(v + V.callout, 'pop', {pitch: 1.15});
+	V.joins.forEach((j, i) => add(v + j, 'chime', {step: i, pan: -0.2}));
+	add(v + V.callout, 'pop', {step: 1, pan: -0.3});
 
-	// live
 	const L = CUES.live;
 	const l = A('live');
-	add(l + L.title, 'swish', {gain: 0.5});
-	add(l + L.phone, 'swish', {gain: 0.4, pan: 0.6});
-	add(l + L.picker, 'pop', {pan: -0.6});
-	add(l + L.click4k, 'click', {pan: -0.6});
-	add(l + L.click60, 'click', {pan: -0.6});
-	add(l + L.event, 'pop', {pitch: 1.05, pan: 0.5});
-	add(l + L.interested, 'click', {pan: 0.5});
-	add(l + L.interested + 3, 'ding', {gain: 0.55, pan: 0.5});
+	add(l + L.picker, 'pop', {step: 0, pan: -0.4});
+	add(l + L.click4k, 'click', {pan: -0.4});
+	add(l + L.event, 'pop', {step: 2, pan: -0.2});
+	add(l + L.click60, 'click', {pan: -0.4});
+	add(l + L.interested, 'click', {pan: -0.1});
+	add(l + L.interested + 7.5, 'chime', {pan: -0.1});
 
-	// devices
-	const D = CUES.devices;
-	const d = A('devices');
-	add(d + D.title, 'swish', {gain: 0.5});
-	for (let i = 0; i < 8; i++) add(d + D.chips + i * D.chipStep, 'pop', {pitch: 0.85 + i * 0.07, gain: 0.45, pan: -0.6 + i * 0.17});
-	for (let t = D.typeFrom; t < D.typeTo; t += 2.4) add(d + t, 'key', {gain: 0.45, pan: 0.6, pitch: 0.9 + ((t * 7) % 5) / 10});
-	add(d + D.send, 'send', {pan: 0.6});
-	add(d + D.arrive, 'ding', {gain: 0.6, pan: -0.2});
-
-	// apps + nitro
 	const P = CUES.apps;
 	const p = A('apps');
-	add(p + P.title, 'swish', {gain: 0.5});
-	for (let t = P.typeFrom; t < P.typeTo; t += 3) add(p + t, 'key', {gain: 0.55, pan: -0.3});
-	add(p + P.popup, 'pop', {pitch: 1.0, pan: -0.3});
+	add(p + P.popup, 'pop', {step: 0, pan: -0.3});
 	P.sel.forEach((t) => add(p + t, 'tick', {pan: -0.3}));
 	add(p + P.enter, 'click', {pan: -0.3});
-	add(p + P.poll, 'ding', {gain: 0.55, pan: -0.3});
-	add(p + P.fillFrom, 'fill', {dur: (P.fillTo - P.fillFrom) / FPS, gain: 0.5, pan: -0.3});
-	add(p + P.nitro, 'swish', {gain: 0.4, pan: 0.6});
-	for (let i = 0; i < 4; i++) add(p + P.perks + i * P.perkStep, 'pop', {pitch: 1.0 + i * 0.1, gain: 0.5, pan: 0.6});
-	add(p + P.superReact, 'shimmer', {pan: 0.6});
-	add(p + P.superReact, 'pop', {pitch: 0.7, pan: 0.6});
+	add(p + P.poll, 'ding', {step: 1, pan: -0.3});
+	for (let i = 0; i < 4; i++) add(p + P.perks + i * P.perkStep, 'pluck', {step: i + 2, pan: 0.4, gain: 0.8});
+	add(p + P.superReact, 'shimmer', {pan: 0.4, gain: 0.7});
 
-	// roles
 	const R = CUES.roles;
 	const r = A('roles');
-	add(r + R.title, 'swish', {gain: 0.5, pan: 0.4});
-	add(r + R.list, 'swish', {gain: 0.3, pan: -0.3});
-	R.toggles.forEach((t, i) => {
-		add(r + t, 'click', {gain: 0.6, pan: -0.1});
-		add(r + t + 1, 'toggle', {pitch: 1 + i * 0.06, pan: -0.1});
-	});
-	add(r + R.automod, 'alert', {pan: 0.3});
+	R.toggles.forEach((t, i) => add(r + t, 'toggle', {step: i}));
+	add(r + R.automod, 'alert', {pan: 0.2});
 
-	// overview + dive
 	const O = CUES.overview;
-	add(O.start, 'whooshBig', {dur: (O.settle - O.start) / FPS});
-	add(O.title, 'swish', {gain: 0.6});
+	add(O.start, 'swell', {dur: (O.title - O.start) / FPS});
 	add(O.settle, 'shimmer', {gain: 0.8});
-	add(O.dive - 30, 'riser', {dur: (A('cta') - O.dive + 30) / FPS, gain: 0.8});
-	add(O.dive, 'whoosh', {dur: (A('cta') - O.dive) / FPS, gain: 1});
+	add(O.dive - 15, 'riser', {dur: (A('cta') - O.dive + 15) / FPS});
 
-	// cta
 	const T = CUES.cta;
 	const t = A('cta');
-	add(t + T.logo, 'pop', {pitch: 0.8});
 	add(t + T.land, 'impact');
-	add(t + T.wordmark, 'swish', {gain: 0.6});
-	add(t + T.line, 'swish', {gain: 0.45});
-	T.buttons.forEach((b, i) => add(t + b, 'pop', {pitch: 1 + i * 0.15, pan: i ? 0.3 : -0.3}));
-	add(t + T.url, 'tick');
+	T.buttons.forEach((b, i) => add(t + b, 'pop', {step: i * 2, pan: i ? 0.3 : -0.3}));
 	add(t + T.click, 'click', {pan: -0.3});
-	add(t + T.done, 'ding', {pan: -0.3});
-	add(t + T.click, 'shimmer', {gain: 0.7});
+	add(t + T.done, 'chime', {pan: -0.3});
+	add(t + T.click, 'shimmer', {gain: 0.6});
 	return s.sort((x, y) => x.f - y.f);
 };
 

@@ -524,7 +524,8 @@ export const Card: React.FC<{
 	float?: number;
 	radius?: number;
 	style?: React.CSSProperties;
-}> = ({f, at, x, y, children, dark, float = 0, radius = 20, style}) => {
+	z?: number;
+}> = ({f, at, x, y, children, dark, float = 0, radius = 20, style, z = 240}) => {
 	const s = spr(f, at, {damping: 13, stiffness: 170});
 	const bob = Math.sin((f + float * 40) / 24) * 6;
 	return (
@@ -533,7 +534,7 @@ export const Card: React.FC<{
 				position: 'absolute',
 				left: x,
 				top: y,
-				transform: `translateY(${bob + (1 - Math.min(1, s)) * 30}px) scale(${lerp(0.6, 1, s)})`,
+				transform: `translateZ(${z}px) translateY(${bob + (1 - Math.min(1, s)) * 30}px) scale(${lerp(0.6, 1, s)})`,
 				opacity: interpolate(s, [0, 0.35], [0, 1], clamp),
 				...style,
 			}}

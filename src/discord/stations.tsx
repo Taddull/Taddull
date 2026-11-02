@@ -76,7 +76,7 @@ export const Intro: React.FC<{f: number}> = ({f}) => {
 					alignItems: 'center',
 					justifyContent: 'center',
 					opacity: 1 - out,
-					transform: `translateY(${-out * 160}px) scale(${1 - out * 0.35})`,
+					transform: `translateZ(${90 + out * 260}px) translateY(${-out * 160}px) scale(${1 - out * 0.35})`,
 				}}
 			>
 				<div style={{display: 'flex', gap: 44, alignItems: 'center'}}>
@@ -130,7 +130,7 @@ export const Intro: React.FC<{f: number}> = ({f}) => {
 					/>
 				);
 			})}
-			<div style={{position: 'absolute', left: 0, right: 0, top: 285, display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+			<div style={{position: 'absolute', left: 0, right: 0, top: 285, display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateZ(70px)'}}>
 				<div
 					style={{
 						position: 'relative',
@@ -182,14 +182,14 @@ export const Hero: React.FC<{f: number}> = ({f}) => {
 	const t = f - STATIONS.hero.arrive;
 	return (
 		<>
-			<div style={{position: 'absolute', left: 0, right: 0, top: 70, display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+			<div style={{position: 'absolute', left: 0, right: 0, top: 70, display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateZ(120px)'}}>
 				<Reveal text="YOUR PLACE TO TALK" f={t} start={H.title} stagger={4} hl={['TALK']} align="center" style={H1(92)} />
 				<div style={{height: 22}} />
 				<Body f={t} start={H.title + 16} w={1200} size={27} align="center">
 					From school clubs to gaming squads to worldwide art communities — talk every day and hang out more often.
 				</Body>
 			</div>
-			<div style={{position: 'absolute', inset: 0, perspective: 2400}}>
+			<div style={{position: 'absolute', inset: 0, transformStyle: 'preserve-3d'}}>
 				<div style={{position: 'absolute', left: 120, top: 330, transformOrigin: '50% 0%', transform: `translateY(${rise(t, H.mac)}px) scale(0.6) rotateX(3deg)`}}>
 					<MacBook>
 						<DesktopShell
@@ -276,7 +276,7 @@ export const AppStation: React.FC<{f: number}> = ({f}) => {
 	const joined = t >= S.click;
 	return (
 		<>
-			<div style={{position: 'absolute', inset: 0, perspective: 2600}}>
+			<div style={{position: 'absolute', inset: 0, transformStyle: 'preserve-3d'}}>
 				<div style={{position: 'absolute', left: 418, top: 190, transformOrigin: '0 0', transform: `translateY(${rise(t, S.mac, 600)}px) scale(0.74)`}}>
 					<MacBook>
 						<DesktopShell
@@ -325,7 +325,7 @@ export const AppStation: React.FC<{f: number}> = ({f}) => {
 				</div>
 			</div>
 			{/* servers copy (left of the laptop) */}
-			<div style={{position: 'absolute', left: -230, top: 250, width: 640}}>
+			<div style={{position: 'absolute', left: -230, top: 250, width: 640, transform: 'translateZ(120px)'}}>
 				<Eyebrow f={t} start={S.eyebrow} num="01" label="Servers & Channels" icon="users" />
 				<div style={{height: 30}} />
 				<Reveal text={'A HOME FOR\nEVERY SQUAD'} f={t} start={S.title} stagger={4} hl={['SQUAD']} style={H1(66)} />
@@ -383,9 +383,10 @@ export const AppStation: React.FC<{f: number}> = ({f}) => {
 					{t: S.click + 10, x: 1202, y: 372},
 				]}
 				clicks={[S.click]}
+				z={242}
 			/>
 			{/* chat copy (right of the laptop) */}
-			<div style={{position: 'absolute', left: 1730, top: 270, width: 560}}>
+			<div style={{position: 'absolute', left: 1730, top: 270, width: 560, transform: 'translateZ(120px)'}}>
 				<Eyebrow f={tc} start={Ch.eyebrow} num="02" label="Text Chat" icon="chat" />
 				<div style={{height: 30}} />
 				<Reveal text={'CHAT THAT\nKEEPS UP'} f={tc} start={Ch.title} stagger={4} hl={['KEEPS', 'UP']} style={H1(62)} />
@@ -485,12 +486,12 @@ export const Voice: React.FC<{f: number}> = ({f}) => {
 	];
 	return (
 		<>
-			<div style={{position: 'absolute', left: 860, top: 390, width: 1000, height: 300, display: 'flex', alignItems: 'center', gap: 9, opacity: 0.35 * prog(t, -10, 20)}}>
+			<div style={{position: 'absolute', left: 860, top: 390, width: 1000, height: 300, display: 'flex', alignItems: 'center', gap: 9, opacity: 0.35 * prog(t, -10, 20), transform: 'translateZ(-40px)'}}>
 				{bars.map((v, i) => (
 					<div key={i} style={{flex: 1, height: 20 + v * 280, borderRadius: 10, background: '#fff'}} />
 				))}
 			</div>
-			<div style={{position: 'absolute', left: 110, top: 250, width: 720}}>
+			<div style={{position: 'absolute', left: 110, top: 250, width: 720, transform: 'translateZ(120px)'}}>
 				<Eyebrow f={t} start={V.eyebrow} num="03" label="Voice Channels" icon="speaker" />
 				<div style={{height: 32}} />
 				<Reveal text={'HOP IN.\nHANG OUT.'} f={t} start={V.title} stagger={5} hl={['HANG', 'OUT']} style={H1(96)} />
@@ -510,7 +511,7 @@ export const Voice: React.FC<{f: number}> = ({f}) => {
 					))}
 				</div>
 			</div>
-			<div style={{position: 'absolute', inset: 0, perspective: 2000}}>
+			<div style={{position: 'absolute', inset: 0, transformStyle: 'preserve-3d'}}>
 				<div style={{position: 'absolute', left: 900, top: 130, transformOrigin: '0 0', transform: `translateY(${rise(t, V.phoneA, 900) + Math.sin(t / 30) * 8}px) scale(0.92) rotateY(10deg) rotateZ(-3deg)`}}>
 					<IPhone frame="black">
 						<div style={{position: 'absolute', inset: 0, background: C.side, fontFamily: BODY, color: C.text, paddingTop: 54, display: 'flex', flexDirection: 'column'}}>
@@ -583,12 +584,12 @@ export const Live: React.FC<{f: number}> = ({f}) => {
 	});
 	return (
 		<>
-			<div style={{position: 'absolute', left: 0, right: 0, top: 56, display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+			<div style={{position: 'absolute', left: 0, right: 0, top: 56, display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateZ(120px)'}}>
 				<Eyebrow f={t} start={L.eyebrow} num="04" label="Video, Go Live & Events" icon="video" />
 				<div style={{height: 24}} />
 				<Reveal text="STREAM. SHARE. GO LIVE." f={t} start={L.title} stagger={4} hl={['LIVE']} align="center" style={H1(84)} />
 			</div>
-			<div style={{position: 'absolute', inset: 0, perspective: 2400}}>
+			<div style={{position: 'absolute', inset: 0, transformStyle: 'preserve-3d'}}>
 				<div style={{position: 'absolute', left: 900 - 840, top: 300, transformOrigin: '50% 0%', transform: `translateY(${rise(t, L.mac)}px) scale(0.62) rotateX(3deg)`}}>
 					<MacBook>
 						<DesktopShell
@@ -718,6 +719,7 @@ export const Live: React.FC<{f: number}> = ({f}) => {
 					{t: L.interested + 14, x: 540, y: 896},
 				]}
 				clicks={[L.click4k, L.click60, L.interested]}
+				z={242}
 			/>
 		</>
 	);
@@ -733,7 +735,7 @@ export const Devices: React.FC<{f: number}> = ({f}) => {
 	const pulse = prog(t, D.send, D.arrive, easeInOut);
 	return (
 		<>
-			<div style={{position: 'absolute', left: 0, right: 0, top: 56, display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+			<div style={{position: 'absolute', left: 0, right: 0, top: 56, display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translateZ(120px)'}}>
 				<Eyebrow f={t} start={D.eyebrow} num="05" label="Cross-platform" icon="globe" />
 				<div style={{height: 22}} />
 				<Reveal text="ON EVERY DEVICE" f={t} start={D.title} stagger={4} hl={['EVERY', 'DEVICE']} align="center" style={H1(88)} />
@@ -745,7 +747,7 @@ export const Devices: React.FC<{f: number}> = ({f}) => {
 					))}
 				</div>
 			</div>
-			<div style={{position: 'absolute', inset: 0, perspective: 2600}}>
+			<div style={{position: 'absolute', inset: 0, transformStyle: 'preserve-3d'}}>
 				<div style={{position: 'absolute', left: 30, top: 440, transformOrigin: '0 0', transform: `translateY(${rise(t, D.rise[0], 800)}px) scale(0.5) rotateY(18deg)`}}>
 					<IPad>
 						<div style={{position: 'absolute', inset: 0, display: 'flex', background: '#000'}}>
@@ -888,12 +890,12 @@ export const Apps: React.FC<{f: number}> = ({f}) => {
 	const burst = prog(t, P.superReact, P.superReact + 36);
 	return (
 		<>
-			<div style={{position: 'absolute', left: 110, top: 64}}>
+			<div style={{position: 'absolute', left: 110, top: 64, transform: 'translateZ(120px)'}}>
 				<Eyebrow f={t} start={P.eyebrow} num="06" label="Apps, Activities & Nitro" icon="apps" />
 				<div style={{height: 24}} />
 				<Reveal text="PLAY. BUILD. LEVEL UP." f={t} start={P.title} stagger={4} hl={['LEVEL', 'UP']} style={H1(76)} />
 			</div>
-			<div style={{position: 'absolute', inset: 0, perspective: 2400}}>
+			<div style={{position: 'absolute', inset: 0, transformStyle: 'preserve-3d'}}>
 				<div style={{position: 'absolute', left: 60, top: 270, transformOrigin: '0 0', transform: `translateY(${rise(t, P.mac, 800)}px) scale(0.66) rotateY(5deg)`}}>
 					<MacBook>
 						<DesktopShell
@@ -965,7 +967,7 @@ export const Apps: React.FC<{f: number}> = ({f}) => {
 							position: 'absolute',
 							left: 1110,
 							top: 330 + i * 92,
-							transform: `translateX(${(1 - s) * 260}px) translateY(${Math.sin((t + i * 20) / 30) * 5}px)`,
+							transform: `translateZ(${200 + i * 30}px) translateX(${(1 - s) * 260}px) translateY(${Math.sin((t + i * 20) / 30) * 5}px)`,
 							opacity: Math.min(1, s * 1.4),
 						}}
 					>
@@ -978,7 +980,7 @@ export const Apps: React.FC<{f: number}> = ({f}) => {
 					</div>
 				);
 			})}
-			<div style={{position: 'absolute', left: 1820, top: 170}}>
+			<div style={{position: 'absolute', left: 1820, top: 170, transform: 'translateZ(260px)'}}>
 				{t >= P.superReact &&
 					new Array(14).fill(0).map((_, i) => {
 						const a = (i / 14) * Math.PI * 2;
@@ -1084,7 +1086,7 @@ export const Roles: React.FC<{f: number}> = ({f}) => {
 	const path = [{t: R.toggles[0] - 26, x: 1240, y: 760}, ...R.toggles.map((c, i) => ({t: c - 5, ...TOGGLE_POS(i)})), {t: R.toggles[3] + 14, x: TOGGLE_POS(3).x + 14, y: TOGGLE_POS(3).y + 20}];
 	return (
 		<>
-			<div style={{position: 'absolute', inset: 0, perspective: 2400}}>
+			<div style={{position: 'absolute', inset: 0, transformStyle: 'preserve-3d'}}>
 				<div style={{position: 'absolute', left: 80, top: 230, transformOrigin: '0 0', transform: `translateX(${-rise(t, R.mac, 1300)}px) scale(0.66)`}}>
 					<MacBook>
 						<div style={{position: 'absolute', inset: 0, background: C.chat}}>
@@ -1098,7 +1100,7 @@ export const Roles: React.FC<{f: number}> = ({f}) => {
 					</MacBook>
 				</div>
 			</div>
-			<div style={{position: 'absolute', left: 1300, top: 300, width: 600}}>
+			<div style={{position: 'absolute', left: 1300, top: 300, width: 600, transform: 'translateZ(120px)'}}>
 				<Eyebrow f={t} start={R.eyebrow} num="07" label="Roles & Safety" icon="shield" />
 				<div style={{height: 30}} />
 				<Reveal text={"YOU'RE IN\nCONTROL"} f={t} start={R.title} stagger={4} hl={['CONTROL']} style={H1(80)} />
@@ -1123,7 +1125,7 @@ export const Roles: React.FC<{f: number}> = ({f}) => {
 					</div>
 				</div>
 			</Card>
-			<Cursor t={t} path={path} clicks={R.toggles} />
+			<Cursor t={t} path={path} clicks={R.toggles} z={2} />
 		</>
 	);
 };
@@ -1147,11 +1149,11 @@ export const Cta: React.FC<{f: number; camZ: number}> = ({f, camZ}) => {
 		<>
 			{/* giant overview title, sized for the zoomed-out camera */}
 			{titleO > 0.01 && (
-				<div style={{position: 'absolute', left: -2000, right: -2000, top: 540 - 320, opacity: titleO, display: 'flex', justifyContent: 'center'}}>
+				<div style={{position: 'absolute', left: -2000, right: -2000, top: 540 - 320, opacity: titleO, display: 'flex', justifyContent: 'center', transform: 'translateZ(900px)'}}>
 					<Reveal text={'ALL IN\nONE PLACE.'} f={f} start={O.title} stagger={4} hl={['ONE', 'PLACE']} align="center" style={{...H1(280), lineHeight: 1.05, textShadow: `0 30px 80px ${C.shadow}`}} />
 				</div>
 			)}
-			<div style={{position: 'absolute', left: 0, right: 0, top: 250, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 40, transform: `scale(${logo})`, opacity: t >= T.logo - 1 ? 1 : 0}}>
+			<div style={{position: 'absolute', left: 0, right: 0, top: 250, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 40, transform: `translateZ(90px) scale(${logo})`, opacity: t >= T.logo - 1 ? 1 : 0}}>
 				<div style={{width: 180, height: 180, borderRadius: 52, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 30px 80px ${C.shadow}`}}>
 					<Clyde size={116} color={C.bg} style={{transform: `translateY(${Math.sin(t / 9) * 3}px)`}} />
 				</div>
@@ -1166,10 +1168,10 @@ export const Cta: React.FC<{f: number; camZ: number}> = ({f, camZ}) => {
 					})}
 				</div>
 			</div>
-			<div style={{position: 'absolute', left: 0, right: 0, top: 500, display: 'flex', justifyContent: 'center'}}>
+			<div style={{position: 'absolute', left: 0, right: 0, top: 500, display: 'flex', justifyContent: 'center', transform: 'translateZ(60px)'}}>
 				<Reveal text="IMAGINE A PLACE." f={t} start={T.line} stagger={4} hl={['PLACE']} align="center" style={H1(58)} />
 			</div>
-			<div style={{position: 'absolute', left: 538, top: 640, display: 'flex', gap: 24}}>
+			<div style={{position: 'absolute', left: 538, top: 640, display: 'flex', gap: 24, transform: 'translateZ(40px)'}}>
 				{[
 					{x: done ? 'Downloading…' : 'Download for Mac', bg: '#fff', fg: C.ink, icon: (done ? 'check' : 'download') as 'check' | 'download', w: 340},
 					{x: 'Open Discord in your browser', bg: C.ink, fg: '#fff', icon: 'globe' as const, w: 480},
@@ -1202,7 +1204,7 @@ export const Cta: React.FC<{f: number; camZ: number}> = ({f, camZ}) => {
 					);
 				})}
 			</div>
-			<div style={{position: 'absolute', left: 0, right: 0, top: 770, textAlign: 'center', fontFamily: BODY, fontWeight: 800, fontSize: 30, color: '#fff', letterSpacing: '0.08em', opacity: prog(t, T.url, T.url + 14)}}>discord.com</div>
+			<div style={{position: 'absolute', left: 0, right: 0, top: 770, transform: 'translateZ(40px)', textAlign: 'center', fontFamily: BODY, fontWeight: 800, fontSize: 30, color: '#fff', letterSpacing: '0.08em', opacity: prog(t, T.url, T.url + 14)}}>discord.com</div>
 			<Cursor
 				t={t}
 				path={[
@@ -1211,6 +1213,7 @@ export const Cta: React.FC<{f: number; camZ: number}> = ({f, camZ}) => {
 					{t: 236, x: 712, y: 700},
 				]}
 				clicks={[T.click]}
+				z={42}
 			/>
 			{t >= T.click &&
 				conf.map((c, i) => (
@@ -1223,7 +1226,7 @@ export const Cta: React.FC<{f: number; camZ: number}> = ({f, camZ}) => {
 							left: 708 + Math.cos(c.a) * c.v * cp,
 							top: 678 + Math.sin(c.a) * c.v * cp + cp * cp * 160,
 							opacity: 1 - prog(t, T.click + 30, T.click + 60),
-							transform: `rotate(${t * 6 + i * 20}deg)`,
+							transform: `translateZ(${60 + (i % 5) * 40}px) rotate(${t * 6 + i * 20}deg)`,
 						}}
 					/>
 				))}

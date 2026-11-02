@@ -1,7 +1,8 @@
-"""Synthesises the 60 s soundtrack for the DiscordPromo composition: a 120 BPM music bed plus a
-SaaS-style SFX kit (whooshes, UI pops, clicks, keyboard ticks, message dings, toggles, voice-join
-chimes, risers, impacts, shimmers). SFX timings come straight from src/discord/timeline.ts (read via
-`node`), so sound and picture share one source of truth. Pure numpy, no samples.
+"""Synthesises the 60 s soundtrack for the DiscordPromo composition: a 120 BPM music bed plus a soft,
+tuned SaaS-style UI sound layer (bubble pops, marimba plucks, muffled clicks, bell dings and chimes,
+toggles, a gentle alert, shimmers, a sub impact) and a camera "air" layer that follows the 3D camera's
+speed. Cue times and camera speed come straight from src/discord/timeline.ts (read via `node`), and
+every cue is snapped to the 16th-note grid and pitched to the current chord. Pure numpy, no samples.
 
 Writes public/discord-promo-music.wav (gitignored) and public/discord-promo-music.mp3.
 """
@@ -22,8 +23,8 @@ N = int(SR * DUR)
 rng = np.random.default_rng(11)
 
 
-def load_sfx():
-    js = "import('./src/discord/timeline.ts').then(m => console.log(JSON.stringify(m.SFX)))"
+def load_timeline():
+    js = "import('./src/discord/timeline.ts').then(m => console.log(JSON.stringify({sfx: m.SFX, speed: m.CAM_SPEED})))"
     out = subprocess.run(['node', '-e', js], capture_output=True, text=True, check=True).stdout
     return json.loads(out)
 
@@ -93,195 +94,194 @@ def bell(f, dur=0.8, decay=6.0, bright=0.5):
     return s * np.exp(-t * decay) * np.minimum(1, t / 0.002)
 
 
-# ---------------------------------------------------------------- SFX kit
-def sfx_whoosh(dur=1.1):
-    dur = max(0.5, dur)
-    n = sweep_noise(dur, 350, 4200, 1.6, curve=1.4)
+# ---------------------------------------------------------------- SFX kit (soft + tuned)
+# Every tonal effect is pitched to a chord tone of the bar it lands in, and every event is snapped to
+# the 16th-note grid, so the UI sounds read as part of the music rather than on top of it.
+def chord_tones(t, step=0, octave=1):
+    notes, _ = CHORDS[int(t // BAR) % 4]
+    tones = sorted(set(notes + [n + 12 for n in notes]))
+    return tones[step % len(tones)] + 12 * octave + 12 * (step // len(tones))
+
+
+def soft_env(n, attack=0.004, decay=8.0):
+    t = np.arange(n) / SR
+    return np.minimum(1, t / attack) * np.exp(-t * decay)
+
+
+def tone(f, dur, decay, partials=((1, 1.0),), attack=0.004):
     t = T(dur)
-    p = t / dur
-    env = np.where(p < 0.78, (p / 0.78) ** 2.2, np.exp(-(p - 0.78) * 22))
-    air = fft_filter(rng.uniform(-1, 1, len(t)), 5000, None) * 0.25
-    return (n * 1.5 + air) * env
+    s = sum(a * np.sin(2 * np.pi * f * h * t) * np.exp(-t * decay * (1 + (h - 1) * 0.8)) for h, a in partials)
+    return s * np.minimum(1, t / attack)
 
 
-def sfx_whoosh_big(dur=2.2):
-    t = T(dur)
-    p = t / dur
-    n = sweep_noise(dur, 2500, 180, 1.7, curve=0.8)
-    sub = np.sin(2 * np.pi * np.cumsum(90 - 50 * p) / SR) * 0.5
-    env = np.sin(np.pi * np.clip(p * 1.1, 0, 1)) ** 1.5
-    return (n * 1.6 + sub) * env
+def sfx_pop(m):
+    f0 = midi(m)
+    t = T(0.18)
+    f = f0 * (1 + 0.25 * np.exp(-t * 90))
+    s = np.sin(2 * np.pi * np.cumsum(f) / SR)
+    return s * np.minimum(1, t / 0.003) * np.exp(-t * 24)
 
 
-def sfx_swish(dur=0.32):
-    t = T(dur)
-    n = sweep_noise(dur, 6000, 1500, 1.6)
-    return n * np.sin(np.pi * t / dur) ** 2 * 1.3
+def sfx_pluck(m):  # marimba-ish
+    return tone(midi(m), 0.45, 12, ((1, 1.0), (4, 0.18), (10, 0.03)))
 
 
-def sfx_pop(pitch=1.0):
-    t = T(0.14)
-    f = 620 * pitch * (0.62 + 0.38 * np.exp(-t * 55))
-    s = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 34)
-    click = fft_filter(rng.uniform(-1, 1, len(t)), 2000, 9000) * np.exp(-t * 600) * 0.4
-    return np.tanh((s + 0.3 * np.sin(2 * np.pi * np.cumsum(2 * f) / SR) * np.exp(-t * 60) + click) * 1.4)
+def sfx_ding(m):
+    a = tone(midi(m), 0.9, 6, ((1, 1.0), (3, 0.08)), 0.006)
+    b = tone(midi(m + 7), 0.9, 6, ((1, 0.9), (3, 0.06)), 0.006)
+    out = np.zeros(len(a) + int(0.06 * SR))
+    out[:len(a)] += a
+    out[int(0.06 * SR):] += b
+    return out * 0.6
+
+
+def sfx_chime(m):
+    out = np.zeros(int(1.0 * SR))
+    for k, iv in enumerate((0, 4, 7)):
+        n = tone(midi(m + iv), 0.8, 7, ((1, 1.0), (2, 0.12)), 0.006) * (0.75 - k * 0.12)
+        i = int(k * 0.045 * SR)
+        out[i:i + len(n)] += n
+    return out * 0.6
 
 
 def sfx_click():
-    t = T(0.09)
-    tick = fft_filter(rng.uniform(-1, 1, len(t)), 2500, 12000) * np.exp(-t * 900)
-    body = np.sin(2 * np.pi * 1800 * t) * np.exp(-t * 260) * 0.45
-    thock = np.sin(2 * np.pi * 190 * t) * np.exp(-t * 90) * 0.5
-    return tick + body + thock
+    t = T(0.06)
+    n = fft_filter(rng.uniform(-1, 1, len(t)), 300, 2600) * soft_env(len(t), 0.001, 260) * 0.5
+    body = np.sin(2 * np.pi * 160 * t) * soft_env(len(t), 0.001, 70) * 0.6
+    tick = np.sin(2 * np.pi * 1100 * t) * soft_env(len(t), 0.001, 180) * 0.25
+    return n + body + tick
 
 
-def sfx_key(pitch=1.0):
-    t = T(0.05)
-    n = fft_filter(rng.uniform(-1, 1, len(t)), 1800 * pitch, 7000 * pitch) * np.exp(-t * 420)
-    body = np.sin(2 * np.pi * 420 * pitch * t) * np.exp(-t * 200) * 0.35
-    return (n + body) * 0.9
+def sfx_tick(m):
+    return tone(midi(m + 12), 0.08, 45, ((1, 1.0),), 0.002) * 0.6
 
 
-def sfx_ding():
-    a = bell(midi(88), 0.9, 6.5)  # E6
-    b = bell(midi(95), 0.9, 6.0)  # B6
-    out = np.zeros(len(a) + int(0.075 * SR))
-    out[:len(a)] += a * 0.55
-    out[int(0.075 * SR):] += b * 0.6
+def sfx_toggle(m):
+    t = T(0.14)
+    f = midi(m) * (1 + 0.26 * np.minimum(1, t / 0.05))
+    s = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.minimum(1, t / 0.004) * np.exp(-t * 20)
+    c = np.concatenate([sfx_click() * 0.6, np.zeros(len(t))])[:len(t)]
+    return s * 0.7 + c
+
+
+def sfx_alert(m):
+    out = np.zeros(int(0.5 * SR))
+    for k, iv in enumerate((0, -3)):
+        n = tone(midi(m + iv), 0.3, 10, ((1, 1.0), (3, 0.1)), 0.01)
+        i = int(k * 0.125 * SR)
+        out[i:i + len(n)] += n * 0.7
     return out
 
 
-def sfx_send():
-    t = T(0.22)
-    n = sweep_noise(0.22, 900, 6000, 1.5)
-    return n * np.sin(np.pi * t / 0.22) ** 2 * 1.1 + np.concatenate([np.zeros(int(0.15 * SR)), sfx_pop(1.4)])[:len(t)] * 0.5
-
-
-def sfx_join(pitch=1.0):
-    a = bell(midi(72) * pitch, 0.7, 7, 0.2)
-    b = bell(midi(79) * pitch, 0.9, 6, 0.2)
-    out = np.zeros(len(b) + int(0.09 * SR))
-    out[:len(a)] += a * 0.5
-    out[int(0.09 * SR):] += b * 0.55
+def sfx_send(m):
+    d = 0.28
+    t = T(d)
+    n = fft_filter(sweep_noise(d, 400, 2400, 1.5), None, 4000)
+    sw = n * np.sin(np.pi * t / d) ** 2 * 0.5
+    p = sfx_pluck(m + 12) * 0.5
+    out = np.zeros(len(t) + len(p))
+    out[:len(t)] += sw
+    out[int(0.2 * SR):int(0.2 * SR) + len(p)] += p
     return out
 
 
-def sfx_toggle(pitch=1.0):
-    t = T(0.08)
-    f = (900 + 700 * (t / 0.08)) * pitch
-    chirp = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 40) * 0.5
-    return chirp
+def sfx_shimmer(t0):
+    out = np.zeros(int(1.8 * SR))
+    for k in range(6):
+        m = chord_tones(t0, k, 2)
+        n = tone(midi(m), 1.2, 4.5, ((1, 1.0), (2, 0.06)), 0.01) * (0.5 - k * 0.05)
+        i = int(k * 0.06 * SR)
+        out[i:i + len(n)] += n
+    tt = np.arange(len(out)) / SR
+    air = fft_filter(rng.uniform(-1, 1, len(out)), 4000, 9000) * np.exp(-tt * 3) * np.minimum(1, tt / 0.1) * 0.05
+    return out * 0.5 + air
 
 
-def sfx_tick():
-    t = T(0.05)
-    return np.sin(2 * np.pi * 1250 * t) * np.exp(-t * 150) * 0.6 + fft_filter(rng.uniform(-1, 1, len(t)), 3000, 9000) * np.exp(-t * 700) * 0.25
-
-
-def sfx_alert():
-    out = np.zeros(int(0.32 * SR))
-    for k, (f, d) in enumerate(((988, 0.0), (740, 0.13))):
-        t = T(0.11)
-        s = sum(np.sin(2 * np.pi * f * h * t) / h for h in (1, 3, 5)) * np.exp(-t * 18) * np.minimum(1, t / 0.004)
-        i = int(d * SR)
-        out[i:i + len(s)] += s * 0.45
-    return out
-
-
-def sfx_fill(dur=2.0):
-    t = T(dur)
-    p = t / dur
-    f = 380 + 900 * (1 - (1 - p) ** 2)
-    s = np.sin(2 * np.pi * np.cumsum(f) / SR) * (0.5 + 0.5 * np.sin(2 * np.pi * 14 * t)) * 0.22
-    env = np.minimum(1, t / 0.05) * np.minimum(1, (dur - t) / 0.12)
-    return s * env
-
-
-def sfx_shimmer():
-    notes = [77, 81, 84, 86, 89, 93, 96]  # F major-ish sparkle
-    out = np.zeros(int(1.6 * SR))
-    for k, m in enumerate(notes):
-        b = bell(midi(m), 1.0, 5.0, 0.6) * (0.35 - k * 0.02)
-        i = int(k * 0.045 * SR)
-        out[i:i + len(b)] += b
-    t = np.arange(len(out)) / SR
-    out += fft_filter(rng.uniform(-1, 1, len(out)), 7000, None) * np.exp(-t * 3) * np.minimum(1, t / 0.05) * 0.12
-    return out
-
-
-def sfx_thump(pitch=1.0):
-    t = T(0.5)
-    f = 52 * pitch + 150 * np.exp(-t * 26)
-    s = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 6)
-    n = fft_filter(rng.uniform(-1, 1, len(t)), 300, 4000) * np.exp(-t * 35) * 0.5
-    return np.tanh((s + n) * 1.6)
+def sfx_thump(step):
+    t = T(0.45)
+    f = 48 + 70 * np.exp(-t * 30)
+    s = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.minimum(1, t / 0.003) * np.exp(-t * 7)
+    return s
 
 
 def sfx_impact():
-    t = T(2.4)
-    f = 36 + 80 * np.exp(-t * 9)
-    boom = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 2.4)
-    crash = fft_filter(rng.uniform(-1, 1, len(t)), 2500, 13000) * np.exp(-t * 1.8) * 0.35
-    snap = fft_filter(rng.uniform(-1, 1, len(t)), 800, 6000) * np.exp(-t * 40) * 0.6
-    return np.tanh((boom * 1.5 + crash + snap) * 1.2)
+    t = T(2.6)
+    f = 34 + 50 * np.exp(-t * 8)
+    boom = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.minimum(1, t / 0.004) * np.exp(-t * 2.2)
+    tail = fft_filter(rng.uniform(-1, 1, len(t)), 150, 2500) * np.exp(-t * 2.5) * np.minimum(1, t / 0.02) * 0.12
+    return boom + tail
 
 
-def sfx_riser(dur=1.5):
+def sfx_riser(dur):
     t = T(dur)
     p = t / dur
-    n = sweep_noise(dur, 300, 7000, 1.5, curve=2.0)
-    f = 180 + 1500 * p ** 2
-    tone = np.sin(2 * np.pi * np.cumsum(f) / SR) * 0.2
-    return (n * 1.2 + tone) * p ** 2.2
+    n = fft_filter(sweep_noise(dur, 250, 3000, 1.4, curve=2.0), None, 5000)
+    f = 220 + 440 * p ** 2
+    tn = np.sin(2 * np.pi * np.cumsum(f) / SR) * 0.15
+    return (n * 0.8 + tn) * p ** 2.4
 
 
+def sfx_swell(dur):
+    t = T(dur)
+    p = t / dur
+    n = fft_filter(rng.uniform(-1, 1, len(t)), 600, 6000)
+    return n * p ** 3 * 0.6
+
+
+MUSIC_GAIN = 0.55
+
+# per-type output level (linear). Deliberately low: these sit *under* the music, not on top of it.
 SFX_GAIN = {
-    'whoosh': 0.72, 'whooshBig': 0.7, 'swish': 0.7, 'pop': 0.5, 'click': 0.55, 'key': 0.6, 'ding': 0.48,
-    'send': 0.55, 'join': 0.45, 'toggle': 0.75, 'tick': 0.5, 'alert': 0.9, 'fill': 1.8, 'shimmer': 0.5,
-    'thump': 0.85, 'impact': 0.85, 'riser': 0.5,
+    'pop': 0.16, 'pluck': 0.11, 'ding': 0.15, 'chime': 0.14, 'click': 0.16, 'tick': 0.08, 'toggle': 0.12,
+    'alert': 0.12, 'send': 0.13, 'shimmer': 0.16, 'thump': 0.30, 'impact': 0.36, 'riser': 0.12, 'swell': 0.10,
 }
-MUSIC_GAIN = 0.46
 
 
-def render_sfx(ev):
+def render_sfx(ev, t0):
     k = ev['type']
-    p = ev.get('pitch', 1.0)
-    d = ev.get('dur', 1.0)
-    if k == 'whoosh':
-        return sfx_whoosh(d + 0.15)
-    if k == 'whooshBig':
-        return sfx_whoosh_big(d)
-    if k == 'swish':
-        return sfx_swish()
+    st = int(ev.get('step', 0))
     if k == 'pop':
-        return sfx_pop(p)
+        return sfx_pop(chord_tones(t0, st, 1))
+    if k == 'pluck':
+        return sfx_pluck(chord_tones(t0, st, 1))
+    if k == 'ding':
+        return sfx_ding(chord_tones(t0, st, 1))
+    if k == 'chime':
+        return sfx_chime(chord_tones(t0, st, 1) - 12)
     if k == 'click':
         return sfx_click()
-    if k == 'key':
-        return sfx_key(p)
-    if k == 'ding':
-        return sfx_ding()
-    if k == 'send':
-        return sfx_send()
-    if k == 'join':
-        return sfx_join(p)
-    if k == 'toggle':
-        return sfx_toggle(p)
     if k == 'tick':
-        return sfx_tick()
+        return sfx_tick(chord_tones(t0, 0, 1))
+    if k == 'toggle':
+        return sfx_toggle(chord_tones(t0, st, 1))
     if k == 'alert':
-        return sfx_alert()
-    if k == 'fill':
-        return sfx_fill(d)
+        return sfx_alert(chord_tones(t0, 2, 1))
+    if k == 'send':
+        return sfx_send(chord_tones(t0, 2, 1))
     if k == 'shimmer':
-        return sfx_shimmer()
+        return sfx_shimmer(t0)
     if k == 'thump':
-        return sfx_thump(p)
+        return sfx_thump(st)
     if k == 'impact':
         return sfx_impact()
     if k == 'riser':
-        return sfx_riser(d)
+        return sfx_riser(ev.get('dur', 1.0))
+    if k == 'swell':
+        return sfx_swell(ev.get('dur', 1.0))
     raise ValueError(k)
+
+
+def camera_air(speed):
+    """continuous air/whoosh whose level and brightness follow the camera's on-screen speed"""
+    sp = np.asarray(speed, dtype=float)
+    k = np.ones(7) / 7
+    sp = np.convolve(sp, k, mode='same')
+    sp = np.clip(sp / 60.0, 0, 1) ** 1.4
+    env = np.interp(np.arange(N) / SR * FPS, np.arange(len(sp)), sp)
+    base = rng.uniform(-1, 1, N)
+    dark = fft_filter(base, 120, 700)
+    bright = fft_filter(base, 500, 2600)
+    return (dark * (1 - env) + bright * env) * env
 
 
 # ---------------------------------------------------------------- music bed
@@ -302,7 +302,7 @@ def clap():
 
 def hat(open_=False):
     t = T(0.25 if open_ else 0.06)
-    return fft_filter(rng.uniform(-1, 1, len(t)), 7500, None) * np.exp(-t * (14 if open_ else 70))
+    return fft_filter(rng.uniform(-1, 1, len(t)), 7000, 12000) * np.exp(-t * (14 if open_ else 70))
 
 
 def snare():
@@ -441,51 +441,60 @@ def conv(x, h):
     return np.fft.irfft(np.fft.rfft(x, nfft) * np.fft.rfft(h, nfft), nfft)[:len(x)]
 
 
-def main():
-    events = load_sfx()
-    mus = build_music()
-    fx = Bus()
-    for ev in events:
-        sig = render_sfx(ev)
-        t = ev['f'] / FPS
-        g = SFX_GAIN[ev['type']] * ev.get('gain', 1.0)
-        if ev['type'] in ('whoosh', 'whooshBig'):
-            # whoosh is placed to peak on the arrival frame and pans across the stereo field
-            dur = len(sig) / SR
-            start = t
-            pan = ev.get('pan', 0.0)
-            ramp = np.linspace(-pan, pan, len(sig))
-            l = sig * np.cos((ramp + 1) * np.pi / 4) * np.sqrt(2) * g
-            r = sig * np.sin((ramp + 1) * np.pi / 4) * np.sqrt(2) * g
-            fx.place_st(l, r, start)
-            continue
-        if ev['type'] == 'riser':
-            fx.place(sig, t, g)
-            continue
-        fx.place(sig, t, g, ev.get('pan', 0.0))
+TARGET_LUFS = -16.0
 
-    ir_t = T(1.4)
-    ir = fft_filter(rng.uniform(-1, 1, len(ir_t)) * np.exp(-ir_t * 4.5), 200, 7000)
-    ir /= np.sqrt(np.sum(ir ** 2))
-    L = mus.L * MUSIC_GAIN + fx.L
-    R = mus.R * MUSIC_GAIN + fx.R
-    L = L + conv(mus.L * MUSIC_GAIN * 0.2 + fx.L * 0.12, ir)
-    R = R + conv(mus.R * MUSIC_GAIN * 0.2 + fx.R * 0.12, np.roll(ir, 37))
 
-    t = np.arange(N) / SR
-    fade = np.clip(t / 0.03, 0, 1) * np.clip((DUR - t) / 1.2, 0, 1)
-    L *= fade
-    R *= fade
-    peak = max(np.max(np.abs(L)), np.max(np.abs(R)))
-    L = np.tanh(L / peak * 1.4) / np.tanh(1.4) * 0.94
-    R = np.tanh(R / peak * 1.4) / np.tanh(1.4) * 0.94
-
-    pcm = (np.stack([L, R], axis=1) * 32767).astype('<i2')
+def write_wav(L, R):
+    pcm = (np.clip(np.stack([L, R], axis=1), -1, 1) * 32767).astype('<i2')
     with wave.open('public/discord-promo-music.wav', 'wb') as w:
         w.setnchannels(2)
         w.setsampwidth(2)
         w.setframerate(SR)
         w.writeframes(pcm.tobytes())
+
+
+def main():
+    tl = load_timeline()
+    events = tl['sfx']
+    mus = build_music()
+    fx = Bus()
+    sixteenth = BEAT / 4
+    for ev in events:
+        t = round((ev['f'] / FPS) / sixteenth) * sixteenth  # snap to the 16th-note grid
+        sig = render_sfx(ev, t)
+        fx.place(sig, t, SFX_GAIN[ev['type']] * ev.get('gain', 1.0), ev.get('pan', 0.0))
+    air = camera_air(tl['speed'])
+    fx.L += air * 0.07
+    fx.R += np.roll(air, 400) * 0.07
+    # tame anything harsh left in the effects bus
+    fx.L = fft_filter(fx.L, 40, 9000)
+    fx.R = fft_filter(fx.R, 40, 9000)
+
+    ir_t = T(1.6)
+    ir = fft_filter(rng.uniform(-1, 1, len(ir_t)) * np.exp(-ir_t * 4.0), 200, 6000)
+    ir /= np.sqrt(np.sum(ir ** 2))
+    L = mus.L * MUSIC_GAIN + fx.L
+    R = mus.R * MUSIC_GAIN + fx.R
+    L = L + conv(mus.L * MUSIC_GAIN * 0.18 + fx.L * 0.22, ir)
+    R = R + conv(mus.R * MUSIC_GAIN * 0.18 + fx.R * 0.22, np.roll(ir, 37))
+
+    t = np.arange(N) / SR
+    fade = np.clip(t / 0.03, 0, 1) * np.clip((DUR - t) / 1.5, 0, 1)
+    L *= fade
+    R *= fade
+    # gentle master: normalise to -1.5 dBFS peak through a soft knee
+    peak = max(np.max(np.abs(L)), np.max(np.abs(R)))
+    L = np.tanh(L / peak * 1.15) / np.tanh(1.15) * 0.84
+    R = np.tanh(R / peak * 1.15) / np.tanh(1.15) * 0.84
+
+    write_wav(L, R)
+    if shutil.which('ffmpeg'):
+        # loudness-normalise to a comfortable -16 LUFS (measured with ffmpeg's EBU R128 meter)
+        meas = subprocess.run(['ffmpeg', '-hide_banner', '-i', 'public/discord-promo-music.wav', '-af', 'ebur128=framelog=quiet', '-f', 'null', '-'], capture_output=True, text=True).stderr
+        lufs = float([ln for ln in meas.splitlines() if ln.strip().startswith('I:')][-1].split()[1])
+        g = 10 ** ((TARGET_LUFS - lufs) / 20)
+        write_wav(L * g, R * g)
+        print(f'loudness {lufs:.1f} LUFS -> {TARGET_LUFS} LUFS')
     print(f'wrote public/discord-promo-music.wav  ({len(events)} sfx events)')
     if shutil.which('ffmpeg'):
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', 'public/discord-promo-music.wav', '-c:a', 'libmp3lame', '-b:a', '320k', 'public/discord-promo-music.mp3'], check=True)
