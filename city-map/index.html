@@ -1,0 +1,1835 @@
+<title>Island City Atlas</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="An interactive 3D map of a procedurally generated island city.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a full-bleed WebGL map, with floating cartographic panels pinned to its corners
+   (title top-left, controls and building details top-right, legend bottom-left, scale and compass bottom-right). */
+:root {
+  --bg: #dce8ef;
+  --panel: rgba(250, 251, 252, 0.93);
+  --panel-solid: #ffffff;
+  --ink: #17212c;
+  --muted: #586676;
+  --line: rgba(23, 33, 44, 0.12);
+  --chip: rgba(23, 33, 44, 0.065);
+  --accent: #2b4fe0;
+  --accent-ink: #ffffff;
+  --btn: #17212c;
+  --btn-ink: #f6f8fa;
+  --focus: #2b4fe0;
+  --shadow: 0 1px 2px rgba(18, 28, 40, 0.07), 0 10px 28px rgba(18, 28, 40, 0.12);
+
+  /* Land-use palette, after the planning-map convention (yellow residential, red commercial, purple industrial, blue civic). */
+  --lu-res: #f0d98f;
+  --lu-mix: #eeb27a;
+  --lu-com: #e38b7c;
+  --lu-ind: #b4a5c8;
+  --lu-civ: #8fb2d8;
+  --lu-park: #a9cf8f;
+  --lu-water: #a7c8dc;
+
+  /* Colours drawn over the 3D scene follow the scene's day/night lighting, not the UI theme. */
+  --scene-bg: #dce8ef;
+  --lbl-ink: #22303d;
+  --lbl-district: #3b4856;
+  --lbl-water: #2c6a94;
+  --lbl-halo: rgba(255, 255, 255, 0.94);
+
+  --font-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #070d18;
+    --panel: rgba(16, 23, 34, 0.9);
+    --panel-solid: #1d2836;
+    --ink: #e5ebf2;
+    --muted: #93a1b1;
+    --line: rgba(229, 235, 242, 0.12);
+    --chip: rgba(229, 235, 242, 0.07);
+    --accent: #7d95ff;
+    --accent-ink: #0b1220;
+    --btn: #e5ebf2;
+    --btn-ink: #101824;
+    --focus: #9fb1ff;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #070d18;
+  --panel: rgba(16, 23, 34, 0.9);
+  --panel-solid: #1d2836;
+  --ink: #e5ebf2;
+  --muted: #93a1b1;
+  --line: rgba(229, 235, 242, 0.12);
+  --chip: rgba(229, 235, 242, 0.07);
+  --accent: #7d95ff;
+  --accent-ink: #0b1220;
+  --btn: #e5ebf2;
+  --btn-ink: #101824;
+  --focus: #9fb1ff;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+html { height: 100%; box-sizing: border-box; }
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.45 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+#app { position: relative; height: 100%; overflow: hidden; background: var(--scene-bg); }
+#app.scene-night {
+  --scene-bg: #070d18;
+  --lbl-ink: #e7edf5;
+  --lbl-district: #c3cfdd;
+  --lbl-water: #8fbde0;
+  --lbl-halo: rgba(6, 11, 20, 0.92);
+}
+#map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+#map.is-dragging { cursor: grabbing; }
+#map.is-over { cursor: pointer; }
+
+/* Labels drawn over the scene */
+#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.lbl {
+  position: absolute; left: 0; top: 0;
+  white-space: nowrap;
+  will-change: transform;
+  color: var(--lbl-ink);
+  text-shadow: 0 0 2px var(--lbl-halo), 0 0 3px var(--lbl-halo), 0 0 6px var(--lbl-halo), 0 0 10px var(--lbl-halo);
+}
+.lbl-street { font: 500 11px/1 var(--font-body); letter-spacing: 0.01em; }
+.lbl-street.major { font-weight: 600; font-size: 12px; letter-spacing: 0.03em; }
+.lbl-district { font: 800 16px/1 var(--font-display); letter-spacing: 0.24em; text-transform: uppercase; color: var(--lbl-district); }
+.lbl-water { font: italic 400 13px/1 var(--font-body); letter-spacing: 0.08em; color: var(--lbl-water); }
+.lbl-water.big { font-size: 16px; letter-spacing: 0.32em; text-transform: uppercase; }
+.lbl-poi { display: flex; align-items: center; gap: 6px; font: 600 12px/1 var(--font-body); }
+.lbl-poi::before {
+  content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--lbl-ink); box-shadow: 0 0 0 2px var(--lbl-halo);
+}
+
+/* Overlay frame */
+#ui {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding-block: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.panel {
+  pointer-events: auto;
+  background: var(--panel);
+  -webkit-backdrop-filter: blur(12px) saturate(1.15);
+  backdrop-filter: blur(12px) saturate(1.15);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.eyebrow {
+  margin: 0;
+  font: 500 10.5px/1.3 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.title-card { grid-column: 1; grid-row: 1; justify-self: start; align-self: start; padding: 13px 16px 14px; max-width: 360px; min-width: 0; }
+.title-card h1 {
+  margin: 3px 0 5px;
+  font: 800 40px/0.92 var(--font-display);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.stats { margin: 0 0 11px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.title-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn {
+  appearance: none; border: 0; cursor: pointer;
+  padding: 7px 13px;
+  border-radius: 7px;
+  background: var(--btn); color: var(--btn-ink);
+  font-weight: 600; font-size: 13px;
+}
+.btn:hover { filter: brightness(1.12); }
+.btn.ghost { background: var(--chip); color: var(--ink); }
+.btn.ghost:hover { filter: none; background: var(--line); }
+
+.right-col {
+  grid-column: 2; grid-row: 1 / span 2;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  min-height: 0; pointer-events: none;
+}
+.controls { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; padding: 6px; }
+.seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--chip); }
+.seg button {
+  appearance: none; border: 0; cursor: pointer;
+  padding: 6px 11px; border-radius: 6px;
+  background: transparent; color: var(--muted);
+  font-size: 12.5px; font-weight: 500;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--panel-solid); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+
+.info { width: 304px; max-width: 100%; padding: 14px 16px 16px; overflow: auto; min-height: 0; }
+.info-head { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
+.info-head > div { min-width: 0; }
+.info h2 { margin: 3px 0 2px; font: 800 26px/1 var(--font-display); letter-spacing: 0.01em; text-wrap: balance; }
+.info .sub { margin: 0; color: var(--muted); font-size: 12.5px; }
+.use-pill { display: inline-flex; align-items: center; gap: 6px; }
+.use-pill i { width: 9px; height: 9px; border-radius: 2px; background: var(--sw); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15); }
+.icon-btn {
+  appearance: none; border: 0; cursor: pointer; flex: none;
+  width: 30px; height: 30px; border-radius: 7px;
+  display: grid; place-items: center;
+  background: var(--chip); color: var(--ink); font-size: 17px; line-height: 1;
+}
+.icon-btn:hover { background: var(--line); }
+.facts { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 14px 0 12px; border-radius: 8px; overflow: hidden; background: var(--line); border: 1px solid var(--line); }
+.facts div { background: var(--panel-solid); padding: 8px 10px; min-width: 0; }
+.facts dt { font: 500 10px/1.3 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.facts dd { margin: 2px 0 0; font: 500 15px/1.25 var(--font-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.rank { margin: 0 0 12px; font-size: 12.5px; color: var(--muted); }
+.rank-bar { height: 4px; border-radius: 2px; background: var(--chip); margin-top: 6px; overflow: hidden; }
+.rank-bar span { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+
+.bottom {
+  grid-column: 1 / -1; grid-row: 3;
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
+  pointer-events: none; min-width: 0;
+}
+.legend { padding: 10px 14px 12px; min-width: 0; max-width: 300px; }
+.legend summary {
+  cursor: pointer; list-style: none;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+  font: 600 12px/1.2 var(--font-body);
+}
+.legend summary::-webkit-details-marker { display: none; }
+.legend summary::after { content: "–"; color: var(--muted); font-weight: 500; }
+.legend:not([open]) summary::after { content: "+"; }
+.legend summary .mono { margin-left: auto; color: var(--muted); font-weight: 400; font-size: 11px; }
+.legend ul { list-style: none; margin: 9px 0 0; padding: 0; display: grid; gap: 4px; }
+.legend li { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 12.5px; }
+.legend li .sw { width: 12px; height: 12px; border-radius: 3px; background: var(--sw); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14); }
+.legend li .n { font: 400 11.5px/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.hint { margin: 10px 0 0; padding-top: 9px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11.5px; max-width: 34ch; }
+
+.nav { display: flex; align-items: flex-end; gap: 8px; pointer-events: none; flex: none; }
+.scale-card { padding: 8px 11px 7px; display: grid; gap: 4px; justify-items: start; }
+.scale-bar {
+  display: block; height: 7px; width: 100px;
+  border: 1.5px solid var(--ink); border-top: 0;
+  background: linear-gradient(90deg, var(--ink) 0 25%, transparent 25% 50%, var(--ink) 50% 75%, transparent 75%) bottom / 100% 2px no-repeat;
+}
+.scale-card span.mono { font-size: 11px; color: var(--ink); }
+.navbtns { display: grid; grid-template-columns: 34px; gap: 2px; padding: 3px; }
+.navbtns button {
+  appearance: none; border: 0; cursor: pointer;
+  width: 34px; height: 34px; border-radius: 7px;
+  background: transparent; color: var(--ink);
+  font-size: 18px; line-height: 1; display: grid; place-items: center;
+}
+.navbtns button:hover { background: var(--chip); }
+#compass svg { width: 28px; height: 28px; display: block; }
+#needle { transform-origin: 14px 14px; }
+
+.tip {
+  position: absolute; left: 0; top: 0; z-index: 4;
+  pointer-events: none;
+  padding: 7px 10px; border-radius: 7px;
+  background: var(--panel-solid); color: var(--ink);
+  border: 1px solid var(--line); box-shadow: var(--shadow);
+  font-size: 12.5px; line-height: 1.3; white-space: nowrap;
+}
+.tip b { display: block; font-weight: 600; }
+.tip span { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+
+.nogl { position: absolute; inset: 0; margin: auto; width: min(420px, calc(100% - 32px)); height: max-content; padding: 20px; z-index: 5; }
+.nogl h2 { margin: 0 0 6px; font: 800 26px/1 var(--font-display); text-transform: uppercase; }
+.nogl p { margin: 0; color: var(--muted); }
+
+@media (max-width: 640px) {
+  #ui { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 8px; padding-block: 10px; }
+  .title-card { grid-row: 1; justify-self: stretch; max-width: none; padding: 10px 12px 11px; }
+  .title-card h1 { font-size: 30px; }
+  .stats { margin-bottom: 8px; font-size: 12px; }
+  .right-col { grid-column: 1; grid-row: 2; align-items: stretch; }
+  .controls { justify-content: flex-start; }
+  .seg button { padding: 6px 9px; }
+  .bottom { grid-row: 4; }
+  .legend { max-width: none; flex: 1 1 auto; }
+  .legend summary { white-space: nowrap; }
+  .legend summary .mono { display: none; }
+  .hint { display: none; }
+  .info {
+    position: absolute; z-index: 3;
+    left: max(16px, env(safe-area-inset-left, 0px));
+    right: max(16px, env(safe-area-inset-right, 0px));
+    bottom: 10px; width: auto; max-height: 60%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn, .seg button { transition: none; }
+}
+</style>
+
+<div id="app">
+  <canvas id="map" role="img" aria-label="3D map of the city"></canvas>
+  <div id="labels" aria-hidden="true"></div>
+  <div id="tip" class="tip" hidden></div>
+
+  <div id="ui">
+    <header class="panel title-card">
+      <p class="eyebrow">Island City Atlas · Seed <span id="seed-out">—</span></p>
+      <h1 id="city-name">Generating…</h1>
+      <p class="stats" id="stats">Laying out streets</p>
+      <div class="title-actions">
+        <button class="btn" id="btn-new" type="button">New city</button>
+        <button class="btn ghost" id="btn-reset" type="button">Reset view</button>
+      </div>
+    </header>
+
+    <div class="right-col">
+      <nav class="panel controls" aria-label="Map controls">
+        <div class="seg" role="group" aria-label="Lighting">
+          <button type="button" id="btn-day" aria-pressed="true">Day</button>
+          <button type="button" id="btn-night" aria-pressed="false">Night</button>
+        </div>
+        <div class="seg" role="group" aria-label="Camera">
+          <button type="button" data-view="oblique" aria-pressed="true">3D</button>
+          <button type="button" data-view="plan" aria-pressed="false">Plan</button>
+          <button type="button" data-view="street" aria-pressed="false">Street</button>
+        </div>
+        <div class="seg" role="group" aria-label="Display">
+          <button type="button" id="btn-labels" aria-pressed="true">Labels</button>
+          <button type="button" id="btn-tour" aria-pressed="false">Orbit</button>
+        </div>
+      </nav>
+
+      <section class="panel info" id="info" hidden aria-live="polite" aria-label="Building details">
+        <div class="info-head">
+          <div>
+            <p class="eyebrow use-pill" id="info-use"><i></i><span>Commercial</span></p>
+            <h2 id="info-title">—</h2>
+            <p class="sub" id="info-sub">—</p>
+          </div>
+          <button class="icon-btn" id="info-close" type="button" aria-label="Close building details">×</button>
+        </div>
+        <dl class="facts" id="info-facts"></dl>
+        <p class="rank" id="info-rank"></p>
+        <button class="btn" id="info-zoom" type="button">Zoom to building</button>
+      </section>
+    </div>
+
+    <div class="bottom">
+      <details class="panel legend" id="legend" open>
+        <summary><span>Land use</span><span class="mono" id="legend-total"></span></summary>
+        <ul id="legend-list"></ul>
+        <p class="hint" id="hint">Drag to rotate · Right-drag to pan · Scroll to zoom · Click a building for details</p>
+      </details>
+      <div class="nav">
+        <div class="panel scale-card" aria-label="Map scale at the centre of the view">
+          <span class="scale-bar" id="scale-bar"></span>
+          <span class="mono" id="scale-label">200 m</span>
+        </div>
+        <div class="panel navbtns">
+          <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" id="zoom-out" aria-label="Zoom out">−</button>
+          <button type="button" id="compass" aria-label="Turn the map to face north" title="Face north">
+            <svg viewBox="0 0 28 28" aria-hidden="true">
+              <circle cx="14" cy="14" r="12.5" fill="none" stroke="var(--line)" stroke-width="1.5"></circle>
+              <g id="needle">
+                <path d="M14 3.5 L18 14 L10 14 Z" fill="var(--accent)"></path>
+                <path d="M14 24.5 L18 14 L10 14 Z" fill="var(--muted)" opacity="0.55"></path>
+                <text x="14" y="16.6" text-anchor="middle" font-size="6.5" font-weight="700" fill="var(--panel-solid)" font-family="IBM Plex Mono, monospace">N</text>
+              </g>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel nogl" id="nogl" hidden>
+    <h2>Map unavailable</h2>
+    <p>This map draws the city in 3D with WebGL, which this browser or device has turned off. Try another browser, or enable hardware acceleration.</p>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ---------------------------------------------------------------- basics */
+  const $ = (id) => document.getElementById(id);
+  const app = $('app');
+  const canvas = $('map');
+
+  function glAvailable() {
+    try {
+      const c = document.createElement('canvas');
+      return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')));
+    } catch (e) { return false; }
+  }
+  if (!window.THREE || !THREE.OrbitControls || !glAvailable()) {
+    $('nogl').hidden = false;
+    $('city-name').textContent = 'No WebGL';
+    $('stats').textContent = 'The 3D view could not start.';
+    return;
+  }
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const fmt = (n) => Math.round(n).toLocaleString('en-US');
+  const ordinal = (n) => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); };
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const isSmall = Math.min(window.innerWidth, window.innerHeight) < 700;
+  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function makeNoise(seed) {
+    const r = mulberry32(seed ^ 0x5bd1e995);
+    const perm = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) perm[i] = r();
+    const h = (x, y) => perm[(Math.imul(x, 1619) ^ Math.imul(y, 31337) ^ Math.imul(x ^ y, 1013)) & 1023];
+    const n = (x, y) => {
+      const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+      const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+      const a = h(xi, yi), b = h(xi + 1, yi), c = h(xi, yi + 1), d = h(xi + 1, yi + 1);
+      return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+    };
+    const fbm = (x, y) => (n(x, y) + 0.5 * n(x * 2.03 + 17.1, y * 2.03 + 9.2) + 0.25 * n(x * 4.01 + 41.7, y * 4.01 + 3.3)) / 1.75;
+    return { n, fbm };
+  }
+
+  /* ---------------------------------------------------------------- constants */
+  const MAP = 1250;            // half-size of the ground sheet, metres
+  const FRAME = 1100;          // map neatline, metres from centre
+  const CELL = 275;            // grid-reference square, metres (8 x 8, A–H by 1–8)
+  const X0 = -880, XP = 110, NX = 16;   // north–south avenues
+  const Z0 = -880, ZP = 80, NZ = 22;    // east–west streets
+  const wX = (i) => (i % 4 === 0 ? 26 : 14);
+  const wZ = (j) => (j % 4 === 0 ? 24 : 12);
+
+  const LU = {
+    res: { label: 'Residential', hex: 0xf0d98f, css: 'var(--lu-res)', win: 0.95 },
+    mix: { label: 'Mixed use', hex: 0xeeb27a, css: 'var(--lu-mix)', win: 1.0 },
+    com: { label: 'Commercial & office', hex: 0xe38b7c, css: 'var(--lu-com)', win: 1.0 },
+    ind: { label: 'Industrial & port', hex: 0xb4a5c8, css: 'var(--lu-ind)', win: 0.22 },
+    civ: { label: 'Civic & institutional', hex: 0x8fb2d8, css: 'var(--lu-civ)', win: 0.7 },
+  };
+  const GROUND = {
+    day: {
+      sea: '#a7c8dc', shallow: '#bad6e5', land: '#dbe2d2', sand: '#e8e0c6', block: '#e9e7e2', core: '#e1dfdb',
+      port: '#dad6d1', road: '#ffffff', major: '#fff3d4', diag: '#fff3d4', glowMajor: null, glowMinor: null,
+      lane: 'rgba(214, 170, 70, 0.55)', park: '#b7d69c', meadow: '#c8e2ae', path: '#f0ebdd', bank: '#c8c4b9',
+      plaza: '#eeeae2', pier: '#cfcbc4', field: '#9fcb7f', grid: 'rgba(40, 62, 86, 0.11)', frame: '#4f6075', ferry: 'rgba(44, 106, 148, 0.7)',
+    },
+    night: {
+      sea: '#0b1626', shallow: '#0f1d33', land: '#141b25', sand: '#22262a', block: '#1a212c', core: '#1d2430',
+      port: '#1b1f27', road: '#262e3b', major: '#2d3442', diag: '#2d3442', glowMajor: 'rgba(255, 184, 100, 0.8)', glowMinor: 'rgba(255, 198, 130, 0.42)',
+      lane: null, park: '#14241a', meadow: '#182a1e', path: '#2a2d2a', bank: '#232832',
+      plaza: '#212834', pier: '#252a33', field: '#173322', grid: 'rgba(150, 180, 225, 0.10)', frame: '#7083a0', ferry: 'rgba(143, 189, 224, 0.6)',
+    },
+  };
+  const SKY = { day: 0xdce8ef, night: 0x070d18 };
+
+  const NAMES = {
+    s1: ['Hal', 'Mar', 'Es', 'Kel', 'Vor', 'Ash', 'Bren', 'Cal', 'Dun', 'Ever', 'Lind', 'Thorn', 'Wex', 'Ost', 'Rav', 'Sel', 'Tam', 'Quill', 'Nor', 'Brae'],
+    s2: ['verd', 'row', 'by', 'mouth', 'haven', 'wick', 'stead', 'mere', 'gate', 'holm', 'port', 'ness', 'combe', 'field', 'sey', 'dale'],
+    streets: ['Linden', 'Harbor', 'Kessler', 'Alder', 'Mercer', 'Juniper', 'Foundry', 'Cable', 'Orchard', 'Beacon', 'Saltmarsh', 'Quarry',
+      'Tanner', 'Wren', 'Copper', 'Hollis', 'Marlow', 'Garnet', 'Lantern', 'Rowan', 'Sexton', 'Thistle', 'Vane', 'Weller', 'Briar', 'Cinder', 'Ferrous', 'Gable'],
+    towers: ['Meridian', 'Halcyon', 'Sentinel', 'Aurora', 'Pinnacle', 'Crown', 'Lodestar'],
+    parks: ['Central Commons', 'Founders Park', 'Halden Green', 'Meadowbank Park'],
+    rivers: ['Wenna', 'Skell', 'Brede', 'Tarrow', 'Hask'],
+    lakes: ['Alder', 'Coldwater', 'Mirren', 'Stillwater'],
+    stadia: ['Riverside', 'Municipal', 'Founders', 'Harbor'],
+    districts: {
+      core: ['Financial District', 'Downtown', 'Central Business District'],
+      mid: ['Midtown', 'Uptown', 'Old Town'],
+      south: ['Southbank', 'Riverside', 'Bankside'],
+      southwest: ['Millbrook', 'Tanners Row', 'Southfield'],
+      west: ['Lakeside', 'Westmere', 'Reservoir Hill'],
+      north: ['Northgate', 'Highfield', 'Upper Town'],
+      east: ['Eastside', 'Chapel Hill', 'Saltmarket'],
+      port: ['The Docks', 'Harborside', 'Wharf District'],
+    },
+  };
+
+  /* ---------------------------------------------------------------- city generator */
+  function generate(seed) {
+    const rand = mulberry32((Math.imul(seed, 2654435761) >>> 0) || 7);
+    const R = (a, b) => a + (b - a) * rand();
+    const pick = (arr) => arr[Math.floor(rand() * arr.length)];
+    const shuffle = (arr) => { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(rand() * (i + 1)); [a[i], a[k]] = [a[k], a[i]]; } return a; };
+    const N = makeNoise(seed);
+    const M = { seed };
+
+    // Name
+    const end = pick(NAMES.s2);
+    M.name = (end !== 'port' && rand() < 0.35 ? 'Port ' : '') + pick(NAMES.s1) + end;
+
+    // Island coastline: a rounded square with a noisy edge
+    const o1 = R(0, 60), o2 = R(0, 60);
+    const CN = 720, coastR = new Float32Array(CN + 1);
+    M.coast = [];
+    for (let k = 0; k <= CN; k++) {
+      const th = -Math.PI + (k / CN) * Math.PI * 2, c = Math.cos(th), s = Math.sin(th);
+      const F = Math.pow(Math.pow(Math.abs(c) / 990, 4) + Math.pow(Math.abs(s) / 990, 4), 0.25);
+      const r = (1 + 0.12 * (N.fbm(c * 1.7 + o1, s * 1.7 + o2) * 2 - 1)) / F;
+      coastR[k] = Math.min(r, FRAME - 25);
+      if (k < CN) M.coast.push([c * coastR[k], s * coastR[k]]);
+    }
+    const coastAt = (th) => { const f = ((th + Math.PI) / (2 * Math.PI)) * CN, k = Math.floor(f), t = f - k; return coastR[k] * (1 - t) + coastR[Math.min(k + 1, CN)] * t; };
+    const isLand = (x, z, m = 0) => Math.hypot(x, z) < coastAt(Math.atan2(z, x)) - m;
+    M.isLand = isLand;
+    const coastXAt = (z) => { for (let x = 500; x < FRAME; x += 4) if (!isLand(x, z)) return x; return FRAME; };
+
+    // Downtown centre, river and reservoir
+    const C = M.C = { x: R(-40, 110), z: R(-150, -50) };
+    const rv = M.rv = { z0: R(210, 265), A: R(55, 95), k: R(0.0028, 0.0042), ph: R(0, Math.PI * 2), x0: R(-720, -630) };
+    const riverZ = M.riverZ = (x) => rv.z0 + rv.A * Math.sin(x * rv.k + rv.ph) + 30 * (N.n(x * 0.006 + 31.7, 5.3) - 0.5);
+    const riverW = M.riverW = (x) => 60 + Math.max(0, x - 500) * 0.32;
+    const lake = M.lake = { x: rv.x0, z: riverZ(rv.x0), r: R(95, 125) };
+    const inLake = (x, z, m = 0) => Math.hypot(x - lake.x, z - lake.z) < lake.r + m;
+    const inRiver = M.inRiver = (x, z, m = 0) => (x >= rv.x0 && Math.abs(z - riverZ(x)) < riverW(x) / 2 + m) || inLake(x, z, m);
+
+    // The diagonal boulevard, running south-west to north-east through downtown
+    const a = R(0.58, 0.82);
+    const dg = M.dg = { a, w: 30, dx: Math.cos(a), dz: -Math.sin(a), nx: Math.sin(a), nz: Math.cos(a) };
+    const diagSD = (x, z) => (x - C.x) * dg.nx + (z - C.z) * dg.nz;
+    {
+      let t0 = 0, t1 = 0;
+      const ok = (t) => { const x = C.x + dg.dx * t, z = C.z + dg.dz * t; return isLand(x, z, 10) && !inLake(x, z, 8); };
+      while (t1 < 1800 && ok(t1 + 4)) t1 += 4;
+      while (t0 > -1800 && ok(t0 - 4)) t0 -= 4;
+      dg.t0 = t0; dg.t1 = t1;
+      dg.ax = C.x + dg.dx * t0; dg.az = C.z + dg.dz * t0; dg.bx = C.x + dg.dx * t1; dg.bz = C.z + dg.dz * t1;
+      dg.bridges = [];
+      let wet = null;
+      for (let t = t0; t <= t1; t += 2) {
+        const x = C.x + dg.dx * t, z = C.z + dg.dz * t, w = inRiver(x, z, 4);
+        if (w && wet === null) wet = t;
+        if (!w && wet !== null) { dg.bridges.push([wet - 8, t + 8]); wet = null; }
+      }
+      if (wet !== null) dg.bridges.push([wet - 8, t1]);
+    }
+
+    // Street grid
+    const xs = M.xs = [], zs = M.zs = [];
+    for (let i = 0; i <= NX; i++) xs.push(X0 + i * XP);
+    for (let j = 0; j <= NZ; j++) zs.push(Z0 + j * ZP);
+    const blockRect = (i, j) => ({ x0: xs[i] + wX(i) / 2, x1: xs[i + 1] - wX(i + 1) / 2, z0: zs[j] + wZ(j) / 2, z1: zs[j + 1] - wZ(j + 1) / 2 });
+    const colOf = (x) => clamp(Math.floor((x - X0) / XP), 0, NX - 1);
+    const rowOf = (z) => clamp(Math.floor((z - Z0) / ZP), 0, NZ - 1);
+    function rectOK(r, mLand, mRiver, mDiag) {
+      const pts = [[r.x0, r.z0], [r.x1, r.z0], [r.x0, r.z1], [r.x1, r.z1], [(r.x0 + r.x1) / 2, (r.z0 + r.z1) / 2]];
+      let lo = Infinity, hi = -Infinity, near = Infinity;
+      for (const [x, z] of pts) {
+        if (!isLand(x, z, mLand) || inRiver(x, z, mRiver)) return false;
+        const d = diagSD(x, z); lo = Math.min(lo, d); hi = Math.max(hi, d); near = Math.min(near, Math.abs(d));
+      }
+      if (lo <= 0 && hi >= 0) return false;
+      return near >= mDiag;
+    }
+
+    // Superblocks: landmarks and the big park
+    const taken = new Map();
+    const supers = M.supers = [];
+    function tryClaim(kind, i0, j0, ni, nj, mDiag) {
+      if (i0 < 0 || j0 < 0 || i0 + ni > NX || j0 + nj > NZ) return null;
+      for (let i = i0; i < i0 + ni; i++) for (let j = j0; j < j0 + nj; j++) if (taken.has(i + ',' + j)) return null;
+      const A = blockRect(i0, j0), B = blockRect(i0 + ni - 1, j0 + nj - 1);
+      const r = { x0: A.x0, z0: A.z0, x1: B.x1, z1: B.z1 };
+      if (!rectOK(r, 18, 14, mDiag)) return null;
+      for (let i = i0; i < i0 + ni; i++) for (let j = j0; j < j0 + nj; j++) taken.set(i + ',' + j, kind);
+      const sb = Object.assign({ kind, i0, j0, ni, nj, cx: (r.x0 + r.x1) / 2, cz: (r.z0 + r.z1) / 2 }, r);
+      supers.push(sb);
+      return sb;
+    }
+    function claimNear(kind, ci, cj, ni, nj, mDiag) {
+      for (let rad = 0; rad < 7; rad++) {
+        for (let di = -rad; di <= rad; di++) for (let dj = -rad; dj <= rad; dj++) {
+          if (Math.max(Math.abs(di), Math.abs(dj)) !== rad) continue;
+          const sb = tryClaim(kind, ci + di, cj + dj, ni, nj, mDiag);
+          if (sb) return sb;
+        }
+      }
+      return null;
+    }
+    const ci = colOf(C.x), cj = rowOf(C.z);
+    const sTower = claimNear('tower', ci, cj, 1, 1, 22);
+    const sPark = claimNear('park', ci - 1, cj - 8, 2, 4, 24);
+    const sHall = claimNear('hall', ci - 2, cj - 1, 1, 1, 22);
+    const sStation = claimNear('station', ci + 1, cj - 4, 1, 1, 22);
+    const stX = C.x + 330;
+    const sStadium = claimNear('stadium', colOf(stX), rowOf(riverZ(stX) + riverW(stX) / 2 + 110), 2, 3, 24);
+
+    const interior = (v, line, k) => supers.some((sb) => v
+      ? (line > sb.i0 && line < sb.i0 + sb.ni && k >= sb.j0 && k < sb.j0 + sb.nj)
+      : (line > sb.j0 && line < sb.j0 + sb.nj && k >= sb.i0 && k < sb.i0 + sb.ni));
+
+    // Road segments between intersections
+    const segs = M.segs = [];
+    const segKey = new Set();
+    for (let i = 0; i <= NX; i++) for (let j = 0; j < NZ; j++) {
+      const x = xs[i], az = zs[j], bz = zs[j + 1];
+      let ok = isLand(x, az, 4) && isLand(x, bz, 4) && !interior(true, i, j);
+      let bridge = null;
+      if (ok) {
+        let wet = false, lakeHit = false;
+        for (let t = 0; t <= 1.0001; t += 0.05) { const z = az + (bz - az) * t; if (inRiver(x, z, 3)) { wet = true; if (inLake(x, z, 3)) lakeHit = true; } }
+        if (wet) {
+          if (lakeHit || i % 2 !== 0) ok = false;
+          else {
+            let z0 = Infinity, z1 = -Infinity;
+            for (let z = az; z <= bz; z += 1) if (inRiver(x, z, 2)) { z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+            bridge = { x, z0: Math.max(az, z0 - 9), z1: Math.min(bz, z1 + 9), w: wX(i) + 4 };
+          }
+        }
+      }
+      if (ok) { segs.push({ v: true, line: i, k: j, ax: x, az, bx: x, bz, w: wX(i), major: i % 4 === 0, bridge }); segKey.add('v' + i + '_' + j); }
+    }
+    for (let j = 0; j <= NZ; j++) for (let i = 0; i < NX; i++) {
+      const z = zs[j], ax = xs[i], bx = xs[i + 1];
+      let ok = isLand(ax, z, 4) && isLand(bx, z, 4) && !interior(false, j, i);
+      if (ok) for (let t = 0; t <= 1.0001; t += 0.05) if (inRiver(ax + (bx - ax) * t, z, 3)) { ok = false; break; }
+      if (ok) { segs.push({ v: false, line: j, k: i, ax, az: z, bx, bz: z, w: wZ(j), major: j % 4 === 0, bridge: null }); segKey.add('h' + j + '_' + i); }
+    }
+    M.bridges = segs.filter((s) => s.bridge).map((s) => s.bridge);
+
+    // Continuous runs along each line (used by traffic)
+    const runs = M.runs = [];
+    const byLine = new Map();
+    for (const s of segs) { const key = (s.v ? 'v' : 'h') + s.line; if (!byLine.has(key)) byLine.set(key, []); byLine.get(key).push(s); }
+    for (const list of byLine.values()) {
+      list.sort((p, q) => p.k - q.k);
+      let cur = null;
+      for (const s of list) {
+        if (cur && s.k === cur.lastK + 1) { cur.bx = s.bx; cur.bz = s.bz; cur.lastK = s.k; }
+        else { cur = { ax: s.ax, az: s.az, bx: s.bx, bz: s.bz, lastK: s.k, major: s.major }; runs.push(cur); }
+      }
+    }
+    runs.push({ ax: dg.ax, az: dg.az, bx: dg.bx, bz: dg.bz, major: true, diag: true });
+    runs.forEach((r) => { r.len = Math.hypot(r.bx - r.ax, r.bz - r.az); });
+
+    // Street names
+    const stNames = shuffle(NAMES.streets);
+    M.aveName = (i) => ordinal(i + 1) + ' Avenue';
+    M.stName = (j) => stNames[j % stNames.length] + (j % 4 === 0 ? ' Boulevard' : ' Street');
+    M.diagName = 'Grand Diagonal';
+
+    function addressOf(cx, cz, i, j) {
+      const opts = [
+        { d: cx - xs[i], v: true, line: i, side: 1 },
+        { d: xs[i + 1] - cx, v: true, line: i + 1, side: 0 },
+        { d: cz - zs[j], v: false, line: j, side: 0 },
+        { d: zs[j + 1] - cz, v: false, line: j + 1, side: 1 },
+      ].sort((p, q) => p.d - q.d);
+      const o = opts.find((p) => segKey.has(p.v ? 'v' + p.line + '_' + j : 'h' + p.line + '_' + i)) || opts[0];
+      if (o.v) return ((j + 1) * 100 + Math.floor(clamp((cz - zs[j]) / ZP, 0, 0.99) * 49) * 2 + o.side) + ' ' + M.aveName(o.line);
+      return ((i + 1) * 100 + Math.floor(clamp((cx - xs[i]) / XP, 0, 0.99) * 49) * 2 + o.side) + ' ' + M.stName(o.line);
+    }
+    M.gridRef = (x, z) => 'ABCDEFGH'[clamp(Math.floor((x + FRAME) / CELL), 0, 7)] + (clamp(Math.floor((z + FRAME) / CELL), 0, 7) + 1);
+
+    // Zoning and districts
+    const zoneOf = (x, z) => {
+      const d = Math.hypot(x - C.x, z - C.z);
+      if (d < 330) return 'core';
+      if (x > 480 && (x > coastXAt(z) - 300 || Math.abs(z - riverZ(x)) < 220)) return 'port';
+      if (d < 640) return 'mid';
+      return 'outer';
+    };
+    const districtOf = (x, z, zone) => {
+      if (zone === 'core' || zone === 'port') return zone;
+      if (x > rv.x0 - 60 && z > riverZ(x)) return x < C.x - 260 ? 'southwest' : 'south';
+      if (zone === 'mid') return 'mid';
+      if (x < C.x - 380) return 'west';
+      if (z < C.z - 380) return 'north';
+      return 'east';
+    };
+    M.districtNames = {};
+    for (const k in NAMES.districts) M.districtNames[k] = pick(NAMES.districts[k]);
+
+    // Buildings
+    const blocks = M.blocks = [];
+    const buildings = M.buildings = [];
+    const inst = M.inst = [];
+    const trees = M.trees = [];
+    const TREE_GREENS = [0x7fae5d, 0x6b9f52, 0x8cb868, 0x5e8f4b, 0x93bd6c, 0x739f4f];
+    const addTree = (x, z, r) => trees.push({ x, z, r: r || R(2.6, 5.2), c: pick(TREE_GREENS) });
+    function addInst(b, x0, x1, z0, z1, y0, h, color, win) {
+      inst.push({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, y0, h, color, win, bid: b ? b.id : -1 });
+      if (b) b.inst.push(inst.length - 1);
+    }
+    function newBuilding(o) {
+      const b = Object.assign({ id: buildings.length, inst: [], meshes: [] }, o);
+      b.cx = (b.x0 + b.x1) / 2; b.cz = (b.z0 + b.z1) / 2;
+      b.top = b.top || b.h;
+      b.grid = M.gridRef(b.cx, b.cz);
+      buildings.push(b);
+      return b;
+    }
+    const splits = (a, b, n) => { const out = [a]; for (let k = 1; k < n; k++) out.push(a + (b - a) * (k / n) + (rand() - 0.5) * ((b - a) / n) * 0.35); out.push(b); return out; };
+
+    function makeBuilding(blk, lx0, lx1, lz0, lz1, row, nrows) {
+      const zone = blk.zone;
+      let fx0, fx1, fz0, fz1;
+      if (zone === 'outer') {
+        if (rand() < 0.08) return;
+        const lw = lx1 - lx0, ld = lz1 - lz0;
+        const w = Math.min(lw - 3, R(9, 15)), d = Math.min(ld - 7, R(10, 16));
+        const cx = (lx0 + lx1) / 2 + (rand() - 0.5) * Math.max(0, lw - w - 3) * 0.5;
+        const north = nrows === 2 ? row === 0 : rand() < 0.5;
+        const setback = R(3, 6);
+        if (north) { fz0 = lz0 + setback; fz1 = fz0 + d; } else { fz1 = lz1 - setback; fz0 = fz1 - d; }
+        fx0 = cx - w / 2; fx1 = cx + w / 2;
+      } else {
+        if (zone === 'mid' && rand() < 0.05) return;
+        const ins = zone === 'core' ? R(3, 6) : zone === 'port' ? R(4, 9) : R(1.5, 4);
+        fx0 = lx0 + ins; fx1 = lx1 - ins; fz0 = lz0 + ins; fz1 = lz1 - ins;
+      }
+      if (fx1 - fx0 < 5 || fz1 - fz0 < 5) return;
+      const rect = { x0: fx0, x1: fx1, z0: fz0, z1: fz1 };
+      if (!rectOK(rect, 6, 9, dg.w / 2 + 4)) return;
+      const cx = (fx0 + fx1) / 2, cz = (fz0 + fz1) / 2;
+      const dC = Math.hypot(cx - C.x, cz - C.z);
+      const nz = N.fbm(cx * 0.004 + 3.1, cz * 0.004 + 7.7);
+      let h, use;
+      if (zone === 'core') { const f = Math.max(0, 1 - dC / 330); h = 40 + 215 * Math.pow(f, 1.5) * R(0.45, 1.15) + 30 * nz; use = rand() < 0.78 ? 'com' : 'mix'; }
+      else if (zone === 'mid') { const f = Math.max(0, 1 - (dC - 330) / 310); h = 12 + 44 * f * R(0.4, 1.2) + 14 * nz; const u = rand(); use = u < 0.38 ? 'mix' : u < 0.6 ? 'com' : 'res'; }
+      else if (zone === 'outer') { h = R(6, 13) + (rand() < 0.1 ? R(6, 16) : 0); const u = rand(); use = u < 0.9 ? 'res' : u < 0.96 ? 'mix' : 'civ'; }
+      else { h = R(8, 17); use = rand() < 0.9 ? 'ind' : 'com'; }
+      h = Math.round(h * 2) / 2;
+      const district = districtOf(cx, cz, zone);
+      const b = newBuilding({ x0: fx0, x1: fx1, z0: fz0, z1: fz1, h, use, zone, district, address: addressOf(cx, cz, blk.i, blk.j) });
+      b.floors = use === 'ind' ? Math.max(1, Math.round(h / 6)) : Math.max(1, Math.floor(h / 3.6));
+      const col = LU[use].hex, win = LU[use].win;
+      let top = rect;
+      if (zone === 'core' && h > 110 && rand() < 0.65) {
+        const h1 = h * R(0.55, 0.72);
+        addInst(b, fx0, fx1, fz0, fz1, 0, h1, col, win);
+        const mx = cx, mz = cz, sx = (fx1 - fx0) * R(0.6, 0.8) / 2, sz = (fz1 - fz0) * R(0.6, 0.8) / 2;
+        if (h > 180 && rand() < 0.6) {
+          const h2 = h1 + (h - h1) * 0.6;
+          addInst(b, mx - sx, mx + sx, mz - sz, mz + sz, h1, h2 - h1, col, win);
+          top = { x0: mx - sx * 0.68, x1: mx + sx * 0.68, z0: mz - sz * 0.68, z1: mz + sz * 0.68 };
+          addInst(b, top.x0, top.x1, top.z0, top.z1, h2, h - h2, col, win);
+        } else {
+          top = { x0: mx - sx, x1: mx + sx, z0: mz - sz, z1: mz + sz };
+          addInst(b, top.x0, top.x1, top.z0, top.z1, h1, h - h1, col, win);
+        }
+      } else {
+        addInst(b, fx0, fx1, fz0, fz1, 0, h, col, win);
+      }
+      if (h > 16 && use !== 'ind' && rand() < 0.5) {
+        const tw = top.x1 - top.x0, td = top.z1 - top.z0, rw = tw * R(0.2, 0.4), rd = td * R(0.2, 0.4);
+        const px = top.x0 + 1 + rand() * (tw - rw - 2), pz = top.z0 + 1 + rand() * (td - rd - 2);
+        addInst(b, px, px + rw, pz, pz + rd, h, R(2.5, 4.5), 0xc6cad0, 0);
+      }
+      return b;
+    }
+
+    function scatterTrees(r, step, prob, avoid) {
+      for (let x = r.x0 + step / 2; x < r.x1; x += step) for (let z = r.z0 + step / 2; z < r.z1; z += step) {
+        if (rand() > prob) continue;
+        const tx = x + (rand() - 0.5) * step * 0.8, tz = z + (rand() - 0.5) * step * 0.8;
+        if (avoid && avoid(tx, tz)) continue;
+        if (!isLand(tx, tz, 6) || inRiver(tx, tz, 4)) continue;
+        addTree(tx, tz);
+      }
+    }
+
+    for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) {
+      const r = blockRect(i, j), cx = (r.x0 + r.x1) / 2, cz = (r.z0 + r.z1) / 2;
+      const zone = zoneOf(cx, cz);
+      const blk = Object.assign({ i, j, cx, cz, zone, kind: taken.get(i + ',' + j) || 'built' }, r);
+      if (blk.kind === 'built' && isLand(cx, cz, 20) && !inRiver(cx, cz, 0)) {
+        const dC = Math.hypot(cx - C.x, cz - C.z);
+        if (zone !== 'core' && zone !== 'port' && dC > 260 && rand() < 0.045) blk.kind = 'green';
+        else if (zone === 'core' && dC > 60 && rand() < 0.07) blk.kind = 'plaza';
+      }
+      blocks.push(blk);
+      if (blk.kind === 'built') {
+        let nx, nz;
+        if (zone === 'core') { nx = rand() < 0.45 ? 1 : 2; nz = rand() < 0.55 ? 1 : 2; }
+        else if (zone === 'mid') { nx = 2 + Math.floor(rand() * 2); nz = 2; }
+        else if (zone === 'outer') { nx = 4 + Math.floor(rand() * 3); nz = 2; }
+        else { nx = 1 + Math.floor(rand() * 2); nz = rand() < 0.5 ? 1 : 2; }
+        const cxs = splits(r.x0, r.x1, nx), czs = splits(r.z0, r.z1, nz);
+        const made = [];
+        for (let p = 0; p < nx; p++) for (let q = 0; q < nz; q++) {
+          const b = makeBuilding(blk, cxs[p], cxs[p + 1], czs[q], czs[q + 1], q, nz);
+          if (b) made.push(b);
+        }
+        if (zone === 'outer' || zone === 'mid') {
+          const n = zone === 'outer' ? 7 : 2;
+          for (let k = 0; k < n; k++) {
+            const tx = R(r.x0 + 3, r.x1 - 3), tz = R(r.z0 + 3, r.z1 - 3);
+            if (made.some((b) => tx > b.x0 - 3 && tx < b.x1 + 3 && tz > b.z0 - 3 && tz < b.z1 + 3)) continue;
+            if (!rectOK({ x0: tx - 1, x1: tx + 1, z0: tz - 1, z1: tz + 1 }, 6, 6, dg.w / 2 + 3)) continue;
+            addTree(tx, tz, R(2.4, 4.4));
+          }
+        }
+      } else if (blk.kind === 'green') {
+        scatterTrees(r, 11, 0.62, (x, z) => Math.abs(diagSD(x, z)) < dg.w / 2 + 3);
+      } else if (blk.kind === 'plaza') {
+        for (let x = r.x0 + 6; x <= r.x1 - 6; x += 14) { if (Math.abs(diagSD(x, r.z0 + 6)) > 20) addTree(x, r.z0 + 6, 3); if (Math.abs(diagSD(x, r.z1 - 6)) > 20) addTree(x, r.z1 - 6, 3); }
+      }
+    }
+
+    // Landmarks
+    const LM = M.landmarks = {};
+    if (sTower) {
+      const h = Math.round(R(292, 345));
+      const s = 23, cx = sTower.cx, cz = sTower.cz;
+      const b = newBuilding({ x0: cx - s, x1: cx + s, z0: cz - s, z1: cz + s, h, top: h * 1.17, use: 'com', zone: 'core', district: 'core', name: pick(NAMES.towers) + ' Tower', address: addressOf(cx, cz, sTower.i0, sTower.j0), landmark: 'tower' });
+      b.floors = Math.floor(h / 4.1);
+      const col = LU.com.hex;
+      addInst(b, cx - s, cx + s, cz - s, cz + s, 0, h * 0.6, col, 1);
+      addInst(b, cx - s * 0.76, cx + s * 0.76, cz - s * 0.76, cz + s * 0.76, h * 0.6, h * 0.25, col, 1);
+      addInst(b, cx - s * 0.5, cx + s * 0.5, cz - s * 0.5, cz + s * 0.5, h * 0.85, h * 0.15, col, 1);
+      LM.tower = { b, cx, cz, h, spire: h * 0.17 };
+      for (let x = sTower.x0 + 6; x <= sTower.x1 - 6; x += 13) { addTree(x, sTower.z0 + 6, 3); addTree(x, sTower.z1 - 6, 3); }
+    }
+    if (sHall) {
+      const cx = sHall.cx, cz = sHall.cz - 6;
+      const b = newBuilding({ x0: cx - 36, x1: cx + 36, z0: cz - 20, z1: cz + 20, h: 20, top: 46, use: 'civ', zone: 'mid', district: districtOf(cx, cz, zoneOf(cx, cz)), name: 'City Hall', address: addressOf(cx, cz, sHall.i0, sHall.j0), landmark: 'hall' });
+      b.floors = 5;
+      addInst(b, cx - 36, cx + 36, cz - 20, cz + 20, 0, 20, LU.civ.hex, 0.7);
+      addInst(b, cx - 15, cx + 15, cz + 20, cz + 27, 0, 15, 0xe9e4da, 0);
+      LM.hall = { b, cx, cz, fountain: { x: cx, z: sHall.z1 - 10 } };
+    }
+    if (sStation) {
+      const cx = sStation.cx, cz = sStation.cz;
+      const L = Math.min(96, sStation.x1 - sStation.x0 - 8);
+      const b = newBuilding({ x0: cx - L / 2, x1: cx + L / 2, z0: cz - 21, z1: cz + 21, h: 14, top: 36, use: 'civ', zone: 'mid', district: districtOf(cx, cz, zoneOf(cx, cz)), name: 'Central Station', address: addressOf(cx, cz, sStation.i0, sStation.j0), landmark: 'station' });
+      b.floors = 3;
+      addInst(b, cx - L / 2, cx + L / 2, cz - 21, cz + 21, 0, 14, LU.civ.hex, 0.6);
+      addInst(b, cx - L / 2 - 2, cx - L / 2 + 8, cz - 5, cz + 5, 0, 36, 0xd9d3c7, 0.3);
+      LM.station = { b, cx, cz, L };
+    }
+    if (sStadium) {
+      const cx = sStadium.cx, cz = sStadium.cz;
+      const rx = Math.min(98, (sStadium.x1 - sStadium.x0) / 2 - 6), rz = Math.min(112, (sStadium.z1 - sStadium.z0) / 2 - 6);
+      const b = newBuilding({ x0: cx - rx, x1: cx + rx, z0: cz - rz, z1: cz + rz, h: 28, use: 'civ', zone: 'mid', district: districtOf(cx, cz, 'mid'), name: pick(NAMES.stadia) + ' Stadium', address: addressOf(cx, cz, sStadium.i0, sStadium.j0), landmark: 'stadium' });
+      b.capacity = Math.round((Math.PI * (rx * rz - rx * 0.64 * rz * 0.62) / 0.55) / 1000) * 1000;
+      LM.stadium = { b, cx, cz, rx, rz };
+      for (let t = 0; t < Math.PI * 2; t += 0.21) addTree(cx + Math.cos(t) * (rx + 4), cz + Math.sin(t) * (rz + 4), 3.2);
+    }
+    if (sPark) {
+      const p = sPark, rr = (a1, b1) => R(a1, b1);
+      const pond = { x: p.cx + rr(-25, 25), z: p.cz + rr(-60, 60), rx: rr(28, 40), rz: rr(18, 26) };
+      const meadow = { x: p.cx - (pond.x - p.cx) * 0.8, z: p.cz - (pond.z - p.cz) * 1.2, rx: rr(30, 45), rz: rr(45, 70) };
+      const inE = (e, x, z, m) => ((x - e.x) / (e.rx + m)) ** 2 + ((z - e.z) / (e.rz + m)) ** 2 < 1;
+      LM.park = { sb: p, pond, meadow, name: pick(NAMES.parks), paths: [] };
+      for (let k = 0; k < 3; k++) {
+        const ax = rr(p.x0 + 10, p.x1 - 10), bx = rr(p.x0 + 10, p.x1 - 10);
+        LM.park.paths.push([ax, p.z0, rr(p.x0, p.x1), rr(p.z0, p.z1), bx, p.z1]);
+      }
+      scatterTrees({ x0: p.x0 + 4, x1: p.x1 - 4, z0: p.z0 + 4, z1: p.z1 - 4 }, 10, 0.72, (x, z) => inE(pond, x, z, 4) || inE(meadow, x, z, 0));
+    }
+    const thL = R(0.5, 1.05);
+    const lr = coastAt(thL) - 16;
+    LM.lighthouse = { x: Math.cos(thL) * lr, z: Math.sin(thL) * lr };
+    {
+      const L = LM.lighthouse;
+      const b = newBuilding({ x0: L.x - 5, x1: L.x + 5, z0: L.z - 5, z1: L.z + 5, h: 34, use: 'civ', zone: 'outer', district: districtOf(L.x, L.z, 'outer'), name: pick(['Gull', 'Shingle', 'Kestrel', 'Tern']) + ' Point Light', address: 'Coast path, ' + M.gridRef(L.x, L.z), landmark: 'lighthouse' });
+      L.b = b;
+    }
+
+    // Port: piers, containers, cranes and ships along the east coast
+    M.piers = []; M.containers = []; M.cranes = []; M.ships = [];
+    {
+      const rzm = riverZ(940), half = riverW(940) / 2;
+      const CONT = [0xb5523b, 0x3f6e9e, 0x5f8a5a, 0xc89a3c, 0x8a8f96, 0x9c4a6a, 0x2f7f86];
+      for (const sgn of [-1, 1]) for (let k = 0; k < 3; k++) {
+        const z = rzm + sgn * (half + 55 + k * 92);
+        const cxl = coastXAt(z);
+        if (cxl >= FRAME - 60 || !isLand(cxl - 40, z) || inRiver(cxl + 60, z, 22)) continue;
+        const pr = { x0: cxl - 40, x1: Math.min(FRAME - 30, cxl + 150), z0: z - 14, z1: z + 14 };
+        M.piers.push(pr);
+        for (let x = pr.x0 + 48; x < pr.x1 - 28; x += 13) for (const lane of [-6.5, -3.5, 3.5, 6.5]) {
+          if (rand() < 0.25) continue;
+          const stack = 1 + Math.floor(rand() * 3);
+          for (let s = 0; s < stack; s++) M.containers.push({ x: x + 6, z: z + lane, y: 1.2 + s * 2.6, c: pick(CONT) });
+        }
+        M.cranes.push({ x: pr.x1 - 22, z });
+        if (M.ships.length < 2 && rand() < 0.7) M.ships.push({ x: (pr.x0 + pr.x1) / 2 + 30, z: z + sgn * 27, len: R(110, 140) });
+      }
+      if (M.piers.length) {
+        const p = M.piers[0];
+        M.ferry = { x: p.x1 + 20, z: (p.z0 + p.z1) / 2 };
+      }
+    }
+
+    // Street trees: boulevards, the diagonal's median, and the river embankments
+    for (const s of segs) {
+      if (s.v || !s.major) continue;
+      for (let x = s.ax + 14; x < s.bx - 12; x += 16) for (const side of [-1, 1]) {
+        const z = s.az + side * (s.w / 2 + 3);
+        if (rectOK({ x0: x - 1, x1: x + 1, z0: z - 1, z1: z + 1 }, 6, 6, dg.w / 2 + 2)) addTree(x, z, R(2.4, 3.4));
+      }
+    }
+    for (let t = dg.t0 + 20; t < dg.t1 - 20; t += 15) {
+      const x = C.x + dg.dx * t, z = C.z + dg.dz * t;
+      if (inRiver(x, z, 10)) continue;
+      if (xs.some((gx) => Math.abs(gx - x) < 16) || zs.some((gz) => Math.abs(gz - z) < 14)) continue;
+      addTree(x, z, R(2.4, 3.2));
+    }
+    for (let x = rv.x0 + lake.r; x < FRAME; x += 17) for (const side of [-1, 1]) {
+      const z = riverZ(x) + side * (riverW(x) / 2 + 7);
+      if (!isLand(x, z, 10) || inLake(x, z, 8)) continue;
+      if (xs.some((gx) => Math.abs(gx - x) < 12) || Math.abs(diagSD(x, z)) < 24) continue;
+      if (x > 600 && Math.abs(z - riverZ(x)) < 200 && rand() < 0.5) continue;
+      addTree(x, z, R(2.8, 4.6));
+    }
+
+    // Stats
+    let streetLen = 0;
+    for (const s of segs) streetLen += Math.hypot(s.bx - s.ax, s.bz - s.az);
+    streetLen += dg.t1 - dg.t0;
+    let parkArea = 0;
+    for (const b of blocks) if (b.kind === 'green' || b.kind === 'park') parkArea += (b.x1 - b.x0) * (b.z1 - b.z0);
+    const counts = { res: 0, mix: 0, com: 0, ind: 0, civ: 0 };
+    for (const b of buildings) counts[b.use]++;
+    const sorted = buildings.slice().sort((p, q) => q.h - p.h);
+    sorted.forEach((b, k) => { b.rank = k + 1; });
+    M.stats = { buildings: buildings.length, km: streetLen / 1000, tallest: sorted[0] ? sorted[0].h : 0, parkHa: parkArea / 10000, counts, trees: trees.length };
+
+    // Labels
+    const labels = M.labels = [];
+    for (const s of segs) {
+      if (s.bridge) continue;
+      const mx = (s.ax + s.bx) / 2, mz = (s.az + s.bz) / 2;
+      if (s.v && (s.k + 2 * s.line) % 6 === 2 && Math.abs(diagSD(mx, mz)) > 40) labels.push({ kind: 'street', text: M.aveName(s.line), x: mx, y: 1, z: mz, dir: [0, 1], major: s.major });
+      if (!s.v && (s.k + s.line) % 5 === 1 && Math.abs(diagSD(mx, mz)) > 40) labels.push({ kind: 'street', text: M.stName(s.line), x: mx, y: 1, z: mz, dir: [1, 0], major: s.major });
+    }
+    for (let t = dg.t0 + 160; t < dg.t1 - 100; t += 420) {
+      const x = C.x + dg.dx * t, z = C.z + dg.dz * t;
+      if (!inRiver(x, z, 20)) labels.push({ kind: 'street', text: M.diagName, x, y: 1, z, dir: [dg.dx, dg.dz], major: true });
+    }
+    const acc = {};
+    for (const b of buildings) { if (b.landmark) continue; const a2 = acc[b.district] || (acc[b.district] = { x: 0, z: 0, n: 0 }); a2.x += b.cx; a2.z += b.cz; a2.n++; }
+    for (const k in acc) if (acc[k].n > 12) labels.push({ kind: 'district', text: M.districtNames[k], x: acc[k].x / acc[k].n, y: 24, z: acc[k].z / acc[k].n });
+    M.riverName = 'River ' + pick(NAMES.rivers);
+    {
+      let best = null;
+      for (let x = rv.x0 + lake.r + 60; x < 500; x += 10) { if (Math.abs(diagSD(x, riverZ(x))) < 120) continue; if (!best || Math.abs(x - (rv.x0 + 380)) < Math.abs(best - (rv.x0 + 380))) best = x; }
+      if (best !== null) {
+        const dz = riverZ(best + 5) - riverZ(best - 5);
+        labels.push({ kind: 'water', text: M.riverName, x: best, y: 1, z: riverZ(best), dir: [10, dz] });
+      }
+    }
+    labels.push({ kind: 'water', text: pick(NAMES.lakes) + ' Reservoir', x: lake.x, y: 1, z: lake.z });
+    {
+      const spots = [[760, 1010], [1010, 760], [-760, 1010], [1010, -760], [-1010, -760], [-760, -1010]];
+      const sp = spots.find(([x, z]) => !isLand(x, z, 40)) || spots[0];
+      labels.push({ kind: 'water', big: true, text: M.name.replace(/^Port /, '') + ' Sound', x: sp[0], y: 1, z: sp[1] });
+    }
+    if (M.ferry) labels.push({ kind: 'water', text: 'Ferry to the mainland', x: (M.ferry.x + FRAME) / 2 + 10, y: 1, z: M.ferry.z - 30, dir: [1, -0.28] });
+    if (LM.tower) labels.push({ kind: 'poi', text: LM.tower.b.name, x: LM.tower.cx, y: LM.tower.h * 1.19, z: LM.tower.cz });
+    if (LM.hall) labels.push({ kind: 'poi', text: 'City Hall', x: LM.hall.cx, y: 50, z: LM.hall.cz });
+    if (LM.station) labels.push({ kind: 'poi', text: 'Central Station', x: LM.station.cx, y: 40, z: LM.station.cz });
+    if (LM.stadium) labels.push({ kind: 'poi', text: LM.stadium.b.name, x: LM.stadium.cx, y: 32, z: LM.stadium.cz });
+    if (LM.park) labels.push({ kind: 'poi', text: LM.park.name, x: LM.park.sb.cx, y: 14, z: LM.park.sb.cz });
+    labels.push({ kind: 'poi', text: LM.lighthouse.b.name, x: LM.lighthouse.x, y: 40, z: LM.lighthouse.z });
+    if (M.piers.length) { const p = M.piers[Math.floor(M.piers.length / 2)]; labels.push({ kind: 'poi', text: 'Container Port', x: (p.x0 + p.x1) / 2, y: 40, z: (p.z0 + p.z1) / 2 }); }
+
+    M.diagSD = diagSD;
+    return M;
+  }
+
+  /* ---------------------------------------------------------------- ground sheet (a painted map on a canvas) */
+  function drawGround(M, P, size) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    const g = cv.getContext('2d');
+    const k = size / (2 * MAP);
+    g.setTransform(k, 0, 0, k, size / 2, size / 2);
+    g.lineJoin = 'round';
+
+    g.fillStyle = P.sea; g.fillRect(-MAP, -MAP, 2 * MAP, 2 * MAP);
+    const coast = new Path2D();
+    M.coast.forEach(([x, z], i) => (i ? coast.lineTo(x, z) : coast.moveTo(x, z)));
+    coast.closePath();
+    g.strokeStyle = P.shallow;
+    g.globalAlpha = 0.45; g.lineWidth = 80; g.stroke(coast);
+    g.globalAlpha = 0.8; g.lineWidth = 36; g.stroke(coast);
+    g.globalAlpha = 1;
+    g.fillStyle = P.land; g.fill(coast);
+
+    g.save();
+    g.clip(coast);
+    // blocks
+    for (const b of M.blocks) {
+      if (b.kind !== 'built' && b.kind !== 'plaza' && b.kind !== 'green') continue;
+      g.fillStyle = b.kind === 'green' ? P.park : b.kind === 'plaza' ? P.plaza : b.zone === 'core' ? P.core : b.zone === 'port' ? P.port : P.block;
+      g.fillRect(b.x0, b.z0, b.x1 - b.x0, b.z1 - b.z0);
+    }
+    for (const sb of M.supers) {
+      g.fillStyle = sb.kind === 'park' ? P.park : P.plaza;
+      g.fillRect(sb.x0, sb.z0, sb.x1 - sb.x0, sb.z1 - sb.z0);
+    }
+    // park interior
+    const LM = M.landmarks;
+    if (LM.park) {
+      const { sb, pond, meadow, paths } = LM.park;
+      g.fillStyle = P.meadow;
+      g.beginPath(); g.ellipse(meadow.x, meadow.z, meadow.rx, meadow.rz, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = P.path; g.lineWidth = 3.5; g.lineCap = 'round';
+      g.beginPath(); g.rect(sb.x0 + 9, sb.z0 + 9, sb.x1 - sb.x0 - 18, sb.z1 - sb.z0 - 18); g.stroke();
+      for (const p of paths) { g.beginPath(); g.moveTo(p[0], p[1]); g.quadraticCurveTo(p[2], p[3], p[4], p[5]); g.stroke(); }
+      g.fillStyle = P.bank; g.beginPath(); g.ellipse(pond.x, pond.z, pond.rx + 2.5, pond.rz + 2.5, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = P.sea; g.beginPath(); g.ellipse(pond.x, pond.z, pond.rx, pond.rz, 0, 0, Math.PI * 2); g.fill();
+    }
+    if (LM.stadium) {
+      const s = LM.stadium;
+      g.fillStyle = P.field; g.beginPath(); g.ellipse(s.cx, s.cz, s.rx * 0.62, s.rz * 0.6, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = 0.9;
+      g.strokeRect(s.cx - 34, s.cz - 52, 68, 104);
+      g.beginPath(); g.moveTo(s.cx - 34, s.cz); g.lineTo(s.cx + 34, s.cz); g.stroke();
+      g.beginPath(); g.arc(s.cx, s.cz, 9, 0, Math.PI * 2); g.stroke();
+    }
+    if (LM.hall) {
+      const f = LM.hall.fountain;
+      g.fillStyle = P.bank; g.beginPath(); g.arc(f.x, f.z, 7, 0, Math.PI * 2); g.fill();
+      g.fillStyle = P.sea; g.beginPath(); g.arc(f.x, f.z, 5.5, 0, Math.PI * 2); g.fill();
+    }
+    // roads: minor first, then major so arterials read as continuous
+    g.lineCap = 'square';
+    for (const pass of [false, true]) {
+      g.strokeStyle = pass ? P.major : P.road;
+      for (const s of M.segs) { if (s.major !== pass) continue; g.lineWidth = s.w; g.beginPath(); g.moveTo(s.ax, s.az); g.lineTo(s.bx, s.bz); g.stroke(); }
+    }
+    const dg = M.dg;
+    g.lineCap = 'butt';
+    g.strokeStyle = P.diag; g.lineWidth = dg.w; g.beginPath(); g.moveTo(dg.ax, dg.az); g.lineTo(dg.bx, dg.bz); g.stroke();
+    g.strokeStyle = P.park; g.lineWidth = 7; g.beginPath(); g.moveTo(dg.ax, dg.az); g.lineTo(dg.bx, dg.bz); g.stroke();
+    // centre lines by day, street-light glow by night
+    if (P.lane) {
+      g.strokeStyle = P.lane; g.lineWidth = 0.6; g.setLineDash([3, 4]);
+      for (const s of M.segs) { if (!s.major) continue; g.beginPath(); g.moveTo(s.ax, s.az); g.lineTo(s.bx, s.bz); g.stroke(); }
+      g.setLineDash([]);
+    }
+    if (P.glowMajor) {
+      g.lineCap = 'round';
+      for (const s of M.segs) {
+        g.strokeStyle = s.major ? P.glowMajor : P.glowMinor; g.lineWidth = s.major ? 3 : 1.6;
+        g.beginPath(); g.moveTo(s.ax, s.az); g.lineTo(s.bx, s.bz); g.stroke();
+      }
+      g.strokeStyle = P.glowMajor; g.lineWidth = 2.4;
+      for (const off of [-9, 9]) { g.beginPath(); g.moveTo(dg.ax + dg.nx * off, dg.az + dg.nz * off); g.lineTo(dg.bx + dg.nx * off, dg.bz + dg.nz * off); g.stroke(); }
+    }
+    // river and reservoir
+    const rv = M.rv, top = [], bot = [];
+    for (let x = rv.x0; x <= MAP; x += 6) { const z = M.riverZ(x), w = M.riverW(x) / 2; top.push([x, z - w]); bot.push([x, z + w]); }
+    const riverPath = (pad) => {
+      const p = new Path2D();
+      top.forEach(([x, z], i) => (i ? p.lineTo(x, z - pad) : p.moveTo(x, z - pad)));
+      for (let i = bot.length - 1; i >= 0; i--) p.lineTo(bot[i][0], bot[i][1] + pad);
+      p.closePath();
+      return p;
+    };
+    g.fillStyle = P.bank; g.fill(riverPath(5));
+    g.beginPath(); g.arc(M.lake.x, M.lake.z, M.lake.r + 5, 0, Math.PI * 2); g.fill();
+    g.fillStyle = P.sea; g.fill(riverPath(0));
+    g.beginPath(); g.arc(M.lake.x, M.lake.z, M.lake.r, 0, Math.PI * 2); g.fill();
+    g.restore();
+
+    g.strokeStyle = P.sand; g.lineWidth = 8; g.stroke(coast);
+    for (const p of M.piers) {
+      g.fillStyle = P.pier; g.fillRect(p.x0, p.z0, p.x1 - p.x0, p.z1 - p.z0);
+    }
+    if (M.ferry) {
+      g.strokeStyle = P.ferry; g.lineWidth = 2.2; g.setLineDash([10, 8]);
+      g.beginPath(); g.moveTo(M.ferry.x, M.ferry.z); g.quadraticCurveTo((M.ferry.x + FRAME) / 2, M.ferry.z - 20, FRAME, M.ferry.z - 70); g.stroke();
+      g.setLineDash([]);
+    }
+
+    // grid references and neatline
+    g.strokeStyle = P.grid; g.lineWidth = 1.6;
+    for (let k2 = 1; k2 < 8; k2++) {
+      const v = -FRAME + k2 * CELL;
+      g.beginPath(); g.moveTo(v, -FRAME); g.lineTo(v, FRAME); g.moveTo(-FRAME, v); g.lineTo(FRAME, v); g.stroke();
+    }
+    g.strokeStyle = P.frame; g.lineWidth = 3.5; g.strokeRect(-FRAME, -FRAME, 2 * FRAME, 2 * FRAME);
+    g.lineWidth = 1; g.strokeRect(-FRAME - 9, -FRAME - 9, 2 * FRAME + 18, 2 * FRAME + 18);
+    g.fillStyle = P.frame; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '500 40px "IBM Plex Mono", ui-monospace, monospace';
+    for (let k2 = 0; k2 < 8; k2++) {
+      const c = -FRAME + (k2 + 0.5) * CELL, L = 'ABCDEFGH'[k2], n = String(k2 + 1);
+      g.fillText(L, c, -FRAME - 52); g.fillText(L, c, FRAME + 52);
+      g.fillText(n, -FRAME - 52, c); g.fillText(n, FRAME + 52, c);
+    }
+    for (let k2 = 0; k2 <= 8; k2++) {
+      const v = -FRAME + k2 * CELL;
+      g.fillRect(v - 1.5, -FRAME - 24, 3, 15); g.fillRect(v - 1.5, FRAME + 9, 3, 15);
+      g.fillRect(-FRAME - 24, v - 1.5, 15, 3); g.fillRect(FRAME + 9, v - 1.5, 15, 3);
+    }
+    return cv;
+  }
+
+  /* ---------------------------------------------------------------- renderer, camera, lights */
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  } catch (e) {
+    $('nogl').hidden = false;
+    return;
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const maxTex = renderer.capabilities.maxTextureSize || 4096;
+  const GROUND_SIZE = Math.min(isSmall ? 2048 : 4096, maxTex);
+  const SHADOW_SIZE = Math.min(isSmall ? 2048 : 4096, maxTex);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(SKY.day);
+  scene.fog = new THREE.Fog(SKY.day, 3000, 9000);
+  const camera = new THREE.PerspectiveCamera(40, 1, 4, 30000);
+  const controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.screenSpacePanning = false;
+  controls.maxPolarAngle = 1.42;
+  controls.minDistance = 35;
+  controls.maxDistance = 4800;
+  controls.rotateSpeed = 0.55;
+  controls.zoomSpeed = 1.1;
+  controls.autoRotateSpeed = 0.55;
+  if (controls.listenToKeyEvents) controls.listenToKeyEvents(window);
+
+  const hemi = new THREE.HemisphereLight(0xffffff, 0xaeb9c3, 0.58);
+  const sun = new THREE.DirectionalLight(0xfff0d8, 0.78);
+  sun.position.set(-760, 1050, 620);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(SHADOW_SIZE, SHADOW_SIZE);
+  Object.assign(sun.shadow.camera, { left: -1300, right: 1300, top: 1300, bottom: -1300, near: 10, far: 4200 });
+  sun.shadow.bias = -0.0006;
+  if ('normalBias' in sun.shadow) sun.shadow.normalBias = 0.7;
+  scene.add(hemi, sun, sun.target);
+
+  const uNight = { value: 0 };
+
+  // Building material: Lambert plus procedural windows, darker glass by day, lit rooms by night.
+  const bMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  bMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uNight = uNight;
+    shader.vertexShader = 'attribute float aWin;\nattribute float aHi;\nvarying float vWin;\nvarying float vHi;\nvarying vec3 vWP;\nvarying vec3 vWN;\n' +
+      shader.vertexShader.replace('#include <begin_vertex>', [
+        '#include <begin_vertex>',
+        'vec4 wp4 = vec4(transformed, 1.0);',
+        'vec3 wn = objectNormal;',
+        '#ifdef USE_INSTANCING',
+        '  wp4 = instanceMatrix * wp4;',
+        '  wn = mat3(instanceMatrix) * wn;',
+        '#endif',
+        'wp4 = modelMatrix * wp4;',
+        'vWP = wp4.xyz; vWN = normalize(wn); vWin = aWin; vHi = aHi;',
+      ].join('\n'));
+    shader.fragmentShader = 'uniform float uNight;\nvarying float vWin;\nvarying float vHi;\nvarying vec3 vWP;\nvarying vec3 vWN;\n' +
+      shader.fragmentShader.replace('#include <emissivemap_fragment>', [
+        '#include <emissivemap_fragment>',
+        'float vertF = 1.0 - step(0.6, abs(vWN.y));',
+        'float along = abs(vWN.x) > 0.5 ? vWP.z : vWP.x;',
+        'vec2 gw = vec2(along / 3.3, vWP.y / 3.6);',
+        'vec2 cellw = floor(gw); vec2 fw = fract(gw);',
+        'float colOn = step(fract(sin(cellw.x * 91.7 + vWN.z * 13.1 + vWN.x * 7.3) * 43758.5453), vWin);',
+        'float win = step(0.2, fw.x) * step(fw.x, 0.8) * step(0.3, fw.y) * step(fw.y, 0.8) * vertF * step(1.0, gw.y) * colOn;',
+        'float rnd = fract(sin(dot(cellw + vec2(vWN.x * 7.0, vWN.z * 13.0), vec2(12.9898, 78.233))) * 43758.5453);',
+        'float fade = 1.0 - smoothstep(230.0, 620.0, distance(vWP, cameraPosition));',
+        'float avgWin = 0.3 * vWin * vertF;',
+        'float winF = mix(avgWin, win, fade);',
+        'diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.64 + vec3(0.03, 0.05, 0.08), winF * 0.7 * (1.0 - uNight));',
+        'diffuseColor.rgb *= mix(0.9, 1.0, vertF);',
+        'diffuseColor.rgb *= mix(1.0, mix(0.8, 1.0, smoothstep(0.0, 7.0, vWP.y)), vertF);',
+        'vec3 warm = mix(vec3(1.0, 0.76, 0.42), vec3(0.72, 0.84, 1.0), step(0.86, rnd));',
+        'float lit = mix(0.5, step(0.52, rnd), fade);',
+        'totalEmissiveRadiance += winF * lit * warm * uNight * 0.95;',
+        'totalEmissiveRadiance += diffuseColor.rgb * 0.035 * uNight;',
+        'totalEmissiveRadiance += vHi * vec3(0.17, 0.31, 0.88) * (0.2 + 0.18 * uNight);',
+      ].join('\n'));
+  };
+
+  const plainMat = (hex, extra) => new THREE.MeshLambertMaterial(Object.assign({ color: hex }, extra || {}));
+  const seaMat = plainMat(0xa7c8dc);
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(60000, 60000).rotateX(-Math.PI / 2), seaMat);
+  sea.position.y = -0.6;
+  scene.add(sea);
+
+  const glowTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,240,200,1)'); gr.addColorStop(0.25, 'rgba(255,220,150,0.6)'); gr.addColorStop(1, 'rgba(255,200,120,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+
+  /* ---------------------------------------------------------------- scene assembly */
+  let M = null, city = null, groundMat = null, groundTex = null;
+  let bMesh = null, carMesh = null, carMat = null, cars = [], lampSprite = null, lampMat = null;
+  const disposables = [];
+  const track = (o) => { disposables.push(o); return o; };
+  const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpP = new THREE.Vector3(), tmpS = new THREE.Vector3(), tmpC = new THREE.Color();
+  const UP = new THREE.Vector3(0, 1, 0);
+
+  function boxMesh(w, h, d, mat, x, y, z) {
+    const m = new THREE.Mesh(track(new THREE.BoxGeometry(w, h, d)), mat);
+    m.position.set(x, y + h / 2, z);
+    m.castShadow = m.receiveShadow = true;
+    return m;
+  }
+
+  function build(seed) {
+    if (city) {
+      scene.remove(city);
+      disposables.forEach((d) => d.dispose && d.dispose());
+      disposables.length = 0;
+      if (groundTex) groundTex.dispose();
+    }
+    M = generate(seed);
+    city = new THREE.Group();
+    scene.add(city);
+
+    // ground sheet
+    groundMat = track(new THREE.MeshLambertMaterial({ color: 0xffffff }));
+    const ground = new THREE.Mesh(track(new THREE.PlaneGeometry(2 * MAP, 2 * MAP).rotateX(-Math.PI / 2)), groundMat);
+    ground.receiveShadow = true;
+    city.add(ground);
+
+    // buildings (one instanced draw)
+    const n = M.inst.length;
+    const geo = track(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0));
+    const aWin = new Float32Array(n), aHi = new Float32Array(n);
+    geo.setAttribute('aWin', new THREE.InstancedBufferAttribute(aWin, 1));
+    const hiAttr = new THREE.InstancedBufferAttribute(aHi, 1);
+    hiAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aHi', hiAttr);
+    bMesh = new THREE.InstancedMesh(geo, bMat, n);
+    bMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    M.inst.forEach((it, k) => {
+      tmpP.set(it.x, it.y0, it.z); tmpS.set(it.w, it.h, it.d); tmpQ.identity();
+      tmpM.compose(tmpP, tmpQ, tmpS); bMesh.setMatrixAt(k, tmpM);
+      bMesh.setColorAt(k, tmpC.setHex(it.color));
+      aWin[k] = it.win;
+    });
+    bMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    bMesh.castShadow = bMesh.receiveShadow = true;
+    bMesh.frustumCulled = false;
+    city.add(bMesh);
+
+    // trees
+    const tGeo = track(new THREE.IcosahedronGeometry(1, 0));
+    const tMat = track(plainMat(0xffffff));
+    const tMesh = new THREE.InstancedMesh(tGeo, tMat, M.trees.length);
+    const trGeo = track(new THREE.BoxGeometry(0.6, 1, 0.6).translate(0, 0.5, 0));
+    const trMat = track(plainMat(0x7a6a58));
+    const trMesh = new THREE.InstancedMesh(trGeo, trMat, M.trees.length);
+    M.trees.forEach((t, k) => {
+      const trunk = 1.6 + t.r * 0.35;
+      tmpQ.setFromAxisAngle(UP, (t.x * 7.31 + t.z * 3.17) % 6.28);
+      tmpP.set(t.x, trunk + t.r, t.z); tmpS.set(t.r, t.r * 1.15, t.r);
+      tmpM.compose(tmpP, tmpQ, tmpS); tMesh.setMatrixAt(k, tmpM);
+      tMesh.setColorAt(k, tmpC.setHex(t.c));
+      tmpQ.identity(); tmpP.set(t.x, 0, t.z); tmpS.set(1, trunk + t.r * 0.4, 1);
+      tmpM.compose(tmpP, tmpQ, tmpS); trMesh.setMatrixAt(k, tmpM);
+    });
+    tMesh.castShadow = true; tMesh.receiveShadow = true; tMesh.frustumCulled = false;
+    trMesh.frustumCulled = false;
+    city.add(tMesh, trMesh);
+
+    // bridges
+    const concrete = track(plainMat(0xc9cdd2));
+    const rail = track(plainMat(0x9aa1aa));
+    for (const br of M.bridges) {
+      const len = br.z1 - br.z0, cz = (br.z0 + br.z1) / 2;
+      city.add(boxMesh(br.w, 1.3, len, concrete, br.x, 0, cz));
+      for (const s of [-1, 1]) city.add(boxMesh(0.7, 1.1, len, rail, br.x + s * (br.w / 2 - 0.35), 1.3, cz));
+    }
+    const dg = M.dg;
+    for (const [t0, t1] of dg.bridges) {
+      const len = t1 - t0, tm = (t0 + t1) / 2, cx = M.C.x + dg.dx * tm, cz = M.C.z + dg.dz * tm;
+      const deck = boxMesh(len, 1.3, dg.w + 4, concrete, cx, 0, cz); deck.rotation.y = dg.a; city.add(deck);
+      for (const s of [-1, 1]) { const r = boxMesh(len, 1.1, 0.7, rail, cx + dg.nx * s * (dg.w / 2 + 1.6), 1.3, cz + dg.nz * s * (dg.w / 2 + 1.6)); r.rotation.y = dg.a; city.add(r); }
+    }
+
+    // landmarks
+    const LM = M.landmarks;
+    if (LM.tower) {
+      const t = LM.tower;
+      const spMat = track(plainMat(0xd7dbe0));
+      const sp = new THREE.Mesh(track(new THREE.CylinderGeometry(0.5, 1.6, t.spire, 8)), spMat);
+      sp.position.set(t.cx, t.h + t.spire / 2, t.cz); sp.castShadow = true; city.add(sp);
+      t.b.meshes.push(sp);
+    }
+    if (LM.hall) {
+      const h = LM.hall;
+      const civMat = track(plainMat(0xdcdfe6));
+      const domeMat = track(plainMat(0x7fae9d));
+      const drum = new THREE.Mesh(track(new THREE.CylinderGeometry(10, 10, 9, 28)), civMat);
+      drum.position.set(h.cx, 24.5, h.cz);
+      const dome = new THREE.Mesh(track(new THREE.SphereGeometry(10.6, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2)), domeMat);
+      dome.position.set(h.cx, 29, h.cz);
+      const lan = new THREE.Mesh(track(new THREE.CylinderGeometry(1.2, 1.6, 6, 10)), domeMat);
+      lan.position.set(h.cx, 42, h.cz);
+      [drum, dome, lan].forEach((m) => { m.castShadow = m.receiveShadow = true; city.add(m); h.b.meshes.push(m); });
+    }
+    if (LM.station) {
+      const s = LM.station;
+      const glassMat = track(plainMat(0xa9bccb));
+      const roof = new THREE.Mesh(track(new THREE.CylinderGeometry(20, 20, s.L - 4, 28, 1, false, 0, Math.PI)), glassMat);
+      roof.rotation.z = Math.PI / 2; roof.scale.set(0.62, 1, 1);
+      roof.position.set(s.cx, 14, s.cz);
+      roof.castShadow = roof.receiveShadow = true; city.add(roof); s.b.meshes.push(roof);
+    }
+    if (LM.stadium) {
+      const s = LM.stadium;
+      const pts = [[0.64, 0], [1, 0], [1, 26], [0.95, 29], [0.68, 7], [0.64, 7], [0.64, 0]].map(([r, y]) => new THREE.Vector2(r * 100, y));
+      const ring = new THREE.Mesh(track(new THREE.LatheGeometry(pts, 72)), track(plainMat(0xc4d4e8, { side: THREE.DoubleSide })));
+      ring.scale.set(s.rx / 100, 1, s.rz / 100);
+      ring.position.set(s.cx, 0, s.cz);
+      ring.castShadow = ring.receiveShadow = true; city.add(ring); s.b.meshes.push(ring);
+    }
+    {
+      const L = LM.lighthouse;
+      const white = track(plainMat(0xf2f2ee)), red = track(plainMat(0xc0463a)), rock = track(plainMat(0x9c9890));
+      const base = new THREE.Mesh(track(new THREE.CylinderGeometry(11, 13, 2.5, 18)), rock); base.position.set(L.x, 1.25, L.z);
+      const tw = new THREE.Mesh(track(new THREE.CylinderGeometry(3, 4.6, 28, 16)), white); tw.position.set(L.x, 16.5, L.z);
+      const band = new THREE.Mesh(track(new THREE.CylinderGeometry(3.6, 3.9, 5, 16)), red); band.position.set(L.x, 17, L.z);
+      lampMat = track(plainMat(0xfff3c4, { emissive: 0x000000 }));
+      const lamp = new THREE.Mesh(track(new THREE.CylinderGeometry(2.4, 2.4, 3.2, 12)), lampMat); lamp.position.set(L.x, 32.1, L.z);
+      const cap = new THREE.Mesh(track(new THREE.ConeGeometry(3.2, 3.4, 12)), red); cap.position.set(L.x, 35.4, L.z);
+      [base, tw, band, lamp, cap].forEach((m) => { m.castShadow = true; city.add(m); L.b.meshes.push(m); });
+      lampSprite = new THREE.Sprite(track(new THREE.SpriteMaterial({ map: glowTex, color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })));
+      lampSprite.position.set(L.x, 32.1, L.z); lampSprite.scale.set(46, 46, 1);
+      city.add(lampSprite);
+    }
+
+    // port
+    const pierMat = track(plainMat(0xc4c0b8));
+    for (const p of M.piers) city.add(boxMesh(p.x1 - p.x0, 1.8, p.z1 - p.z0, pierMat, (p.x0 + p.x1) / 2, -0.6, (p.z0 + p.z1) / 2));
+    if (M.containers.length) {
+      const cMesh = new THREE.InstancedMesh(track(new THREE.BoxGeometry(12.2, 2.6, 2.5).translate(0, 1.3, 0)), track(plainMat(0xffffff)), M.containers.length);
+      M.containers.forEach((c, k) => { tmpQ.identity(); tmpP.set(c.x, c.y, c.z); tmpS.set(1, 1, 1); tmpM.compose(tmpP, tmpQ, tmpS); cMesh.setMatrixAt(k, tmpM); cMesh.setColorAt(k, tmpC.setHex(c.c)); });
+      cMesh.castShadow = cMesh.receiveShadow = true; cMesh.frustumCulled = false;
+      city.add(cMesh);
+    }
+    const craneMat = track(plainMat(0xc4553f));
+    for (const c of M.cranes) {
+      for (const s of [-1, 1]) for (const dx of [-6, 6]) city.add(boxMesh(1.6, 34, 1.6, craneMat, c.x + dx, 1.2, c.z + s * 11));
+      city.add(boxMesh(14, 2.4, 24, craneMat, c.x, 33, c.z));
+      city.add(boxMesh(78, 2.2, 3, craneMat, c.x + 12, 36, c.z));
+    }
+    const hullMat = track(plainMat(0x33414f)), deckMat = track(plainMat(0xb9542f)), bridgeMat = track(plainMat(0xf1f1ee));
+    for (const s of M.ships) {
+      city.add(boxMesh(s.len, 9, 19, hullMat, s.x, -0.6, s.z));
+      city.add(boxMesh(s.len - 6, 0.6, 17, deckMat, s.x, 8.4, s.z));
+      city.add(boxMesh(14, 13, 17, bridgeMat, s.x - s.len / 2 + 12, 9, s.z));
+    }
+
+    // traffic
+    cars = [];
+    const rr = mulberry32(M.seed * 31 + 7);
+    const CAR_COLS = [0xf4f4f2, 0x2b2f36, 0x9aa3ad, 0xb33a3a, 0x3d5f8f, 0xe0c25a, 0x5a6e5a, 0xdedfe0];
+    const usable = M.runs.filter((r) => r.len > 140);
+    const total = usable.reduce((s, r) => s + r.len, 0);
+    const target = Math.min(isSmall ? 320 : 620, Math.floor(total / 28));
+    for (let k = 0; k < target; k++) {
+      let pickLen = rr() * total, run = usable[0];
+      for (const r of usable) { pickLen -= r.len; if (pickLen <= 0) { run = r; break; } }
+      const lanes = run.major ? [3, 6.6] : [2.6];
+      const dir = rr() < 0.5 ? 1 : -1;
+      const lane = lanes[Math.floor(rr() * lanes.length)];
+      const dx = (run.bx - run.ax) / run.len, dz = (run.bz - run.az) / run.len;
+      cars.push({ run, s: rr() * run.len, v: (run.major ? 11 : 7) + rr() * 6, dir, off: lane * dir, dx, dz, yaw: -Math.atan2(dz, dx) + (dir < 0 ? Math.PI : 0), c: CAR_COLS[Math.floor(rr() * CAR_COLS.length)] });
+    }
+    carMat = track(plainMat(0xffffff, { emissive: 0x000000 }));
+    carMesh = new THREE.InstancedMesh(track(new THREE.BoxGeometry(4.4, 1.5, 2).translate(0, 0.75, 0)), carMat, Math.max(1, cars.length));
+    carMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    cars.forEach((c, k) => carMesh.setColorAt(k, tmpC.setHex(c.c)));
+    carMesh.count = cars.length;
+    carMesh.frustumCulled = false;
+    city.add(carMesh);
+    updateCars(0);
+
+    buildLabels();
+    applyScene();
+    updatePanels();
+    hovered = null; selected = null; closeInfo();
+  }
+
+  function updateCars(dt) {
+    if (!carMesh) return;
+    for (let k = 0; k < cars.length; k++) {
+      const c = cars[k], r = c.run;
+      c.s += c.v * dt * c.dir;
+      if (c.s > r.len) c.s -= r.len; else if (c.s < 0) c.s += r.len;
+      const x = r.ax + c.dx * c.s - c.dz * c.off, z = r.az + c.dz * c.s + c.dx * c.off;
+      const edge = Math.min(1, c.s / 12, (r.len - c.s) / 12);
+      const y = M.inRiver(x, z, 10) ? 1.3 : 0.05;
+      tmpQ.setFromAxisAngle(UP, c.yaw); tmpP.set(x, y, z); tmpS.set(edge, edge, edge);
+      tmpM.compose(tmpP, tmpQ, tmpS);
+      carMesh.setMatrixAt(k, tmpM);
+    }
+    carMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /* ---------------------------------------------------------------- labels */
+  const labelsEl = $('labels');
+  let labels = [];
+  function buildLabels() {
+    labelsEl.textContent = '';
+    labels = M.labels.map((L) => {
+      const el = document.createElement('div');
+      el.className = 'lbl lbl-' + L.kind + (L.major ? ' major' : '') + (L.big ? ' big' : '');
+      el.textContent = L.text;
+      el.style.display = 'none';
+      labelsEl.appendChild(el);
+      return {
+        el, kind: L.kind, vis: false, op: -1,
+        p: new THREE.Vector3(L.x, L.y, L.z),
+        dir: L.dir ? new THREE.Vector3(L.dir[0], 0, L.dir[1]).normalize().multiplyScalar(40) : null,
+      };
+    });
+  }
+  const pv = new THREE.Vector3(), pv2 = new THREE.Vector3();
+  function updateLabels(W, H) {
+    labelsEl.style.display = state.labels ? '' : 'none';
+    if (!state.labels) return;
+    const camDist = camera.position.distanceTo(controls.target);
+    for (const L of labels) {
+      const d = camera.position.distanceTo(L.p);
+      let op = 1;
+      if (L.kind === 'district') op = smooth(480, 780, camDist);
+      else if (L.kind === 'street') op = camDist > 1150 ? 0 : 1 - smooth(480, 700, d);
+      else if (L.kind === 'poi') op = 1 - smooth(3600, 4600, d);
+      let show = op > 0.03, x = 0, y = 0;
+      if (show) {
+        pv.copy(L.p).project(camera);
+        if (pv.z > 1 || pv.z < -1) show = false;
+        else {
+          x = (pv.x * 0.5 + 0.5) * W; y = (-pv.y * 0.5 + 0.5) * H;
+          if (x < -160 || x > W + 160 || y < -40 || y > H + 40) show = false;
+        }
+      }
+      if (show !== L.vis) { L.el.style.display = show ? '' : 'none'; L.vis = show; }
+      if (!show) continue;
+      let ang = 0;
+      if (L.dir) {
+        pv2.copy(L.p).add(L.dir).project(camera);
+        if (pv2.z < 1) {
+          const x2 = (pv2.x * 0.5 + 0.5) * W, y2 = (-pv2.y * 0.5 + 0.5) * H;
+          ang = Math.atan2(y2 - y, x2 - x);
+          if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
+        }
+      }
+      const anchor = L.kind === 'poi' ? 'translate(-3.5px, -50%)' : 'translate(-50%, -50%)';
+      L.el.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0) ' + anchor + ' rotate(' + ang.toFixed(3) + 'rad)';
+      if (Math.abs(op - L.op) > 0.03) { L.el.style.opacity = op.toFixed(2); L.op = op; }
+    }
+  }
+
+  /* ---------------------------------------------------------------- day / night */
+  const state = { seed: 0, night: false, manualScene: false, labels: true, tour: false, view: 'oblique' };
+  function prefersDark() {
+    const t = document.documentElement.getAttribute('data-theme');
+    if (t === 'dark') return true;
+    if (t === 'light') return false;
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  function applyScene() {
+    const night = state.night;
+    uNight.value = night ? 1 : 0;
+    const sky = night ? SKY.night : SKY.day;
+    scene.background.setHex(sky); scene.fog.color.setHex(sky);
+    if (night) {
+      hemi.color.setHex(0x41588a); hemi.groundColor.setHex(0x0a0f18); hemi.intensity = 0.36;
+      sun.color.setHex(0x9fb4ff); sun.intensity = 0.2; sun.position.set(620, 900, -540);
+      seaMat.color.set(GROUND.night.sea);
+      carMat.emissive.setHex(0xffd49a);
+      lampMat.emissive.setHex(0xffe7a8);
+    } else {
+      hemi.color.setHex(0xffffff); hemi.groundColor.setHex(0xaeb9c3); hemi.intensity = 0.58;
+      sun.color.setHex(0xfff0d8); sun.intensity = 0.78; sun.position.set(-760, 1050, 620);
+      seaMat.color.set(GROUND.day.sea);
+      carMat.emissive.setHex(0x000000);
+      lampMat.emissive.setHex(0x000000);
+    }
+    lampSprite.visible = night;
+    if (groundTex) groundTex.dispose();
+    groundTex = new THREE.CanvasTexture(drawGround(M, night ? GROUND.night : GROUND.day, GROUND_SIZE));
+    groundTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    groundMat.map = groundTex; groundMat.needsUpdate = true;
+    app.classList.toggle('scene-night', night);
+    $('btn-day').setAttribute('aria-pressed', String(!night));
+    $('btn-night').setAttribute('aria-pressed', String(night));
+  }
+  function setNight(night, manual) {
+    if (manual) state.manualScene = true;
+    if (state.night === night) return;
+    state.night = night;
+    applyScene();
+  }
+  const followTheme = () => { if (!state.manualScene) setNight(prefersDark(), false); };
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    if (mq.addEventListener) mq.addEventListener('change', followTheme);
+  }
+  new MutationObserver(followTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  /* ---------------------------------------------------------------- panels */
+  function updatePanels() {
+    const s = M.stats;
+    $('city-name').textContent = M.name;
+    $('seed-out').textContent = M.seed;
+    $('stats').textContent = fmt(s.buildings) + ' buildings · ' + s.km.toFixed(1) + ' km of streets · tallest ' + fmt(s.tallest) + ' m';
+    canvas.setAttribute('aria-label', '3D map of ' + M.name + ', an island city with ' + fmt(s.buildings) + ' buildings');
+    const list = $('legend-list');
+    list.textContent = '';
+    const row = (css, label, n) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<span class="sw"></span><span></span><span class="n"></span>';
+      li.children[0].style.setProperty('--sw', css);
+      li.children[1].textContent = label;
+      li.children[2].textContent = n;
+      list.appendChild(li);
+    };
+    for (const k of ['res', 'mix', 'com', 'ind', 'civ']) row(LU[k].css, LU[k].label, fmt(s.counts[k]));
+    row('var(--lu-park)', 'Parks', s.parkHa.toFixed(0) + ' ha');
+    row('var(--lu-water)', 'Water', '');
+    $('legend-total').textContent = fmt(s.buildings) + ' bldgs';
+    document.title = 'Island City Atlas';
+  }
+  $('hint').textContent = coarse
+    ? 'Drag to rotate · Two fingers to pan and zoom · Tap a building for details'
+    : 'Drag to rotate · Right-drag or Shift-drag to pan · Scroll to zoom · Click a building for details';
+  if (isSmall) $('legend').open = false;
+
+  /* ---------------------------------------------------------------- picking, hover, selection */
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  let hovered = null, selected = null;
+  function rayBox(o, d, x0, y0, z0, x1, y1, z1) {
+    let tmin = 0, tmax = Infinity;
+    const ax = [[o.x, d.x, x0, x1], [o.y, d.y, y0, y1], [o.z, d.z, z0, z1]];
+    for (const [oo, dd, lo, hi] of ax) {
+      if (Math.abs(dd) < 1e-9) { if (oo < lo || oo > hi) return null; continue; }
+      let t1 = (lo - oo) / dd, t2 = (hi - oo) / dd;
+      if (t1 > t2) { const t = t1; t1 = t2; t2 = t; }
+      if (t1 > tmin) tmin = t1;
+      if (t2 < tmax) tmax = t2;
+      if (tmin > tmax) return null;
+    }
+    return tmin;
+  }
+  function pickAt(clientX, clientY) {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    const o = raycaster.ray.origin, d = raycaster.ray.direction;
+    let best = null, bestT = Infinity;
+    for (const b of M.buildings) {
+      const t = rayBox(o, d, b.x0, 0, b.z0, b.x1, b.top, b.z1);
+      if (t !== null && t < bestT) { bestT = t; best = b; }
+    }
+    return best;
+  }
+  const ACCENT = 0x2b4fe0, ACCENT_SOFT = 0x6f86ee;
+  function paint(b) {
+    if (!b) return;
+    const mode = b === selected ? 2 : b === hovered ? 1 : 0;
+    const hi = bMesh.geometry.getAttribute('aHi');
+    for (const k of b.inst) {
+      bMesh.setColorAt(k, tmpC.setHex(mode === 2 ? ACCENT : mode === 1 ? ACCENT_SOFT : M.inst[k].color));
+      hi.array[k] = mode === 2 ? 1 : mode === 1 ? 0.55 : 0;
+    }
+    hi.needsUpdate = true;
+    bMesh.instanceColor.needsUpdate = true;
+    for (const m of b.meshes) {
+      if (!m.material.emissive) continue;
+      if (m.userData.baseEmissive === undefined) m.userData.baseEmissive = m.material.emissive.getHex();
+      m.material.emissive.setHex(mode ? (mode === 2 ? 0x2b4fe0 : 0x1a2f8a) : m.userData.baseEmissive);
+    }
+  }
+  function setHovered(b) {
+    if (b === hovered) return;
+    const prev = hovered; hovered = b;
+    paint(prev); paint(b);
+    canvas.classList.toggle('is-over', !!b);
+  }
+  const DISTRICT = (b) => M.districtNames[b.district] || '';
+  function describe(b) {
+    const facts = [];
+    if (b.landmark === 'stadium') {
+      facts.push(['Height', fmt(b.h) + ' m'], ['Capacity', '≈ ' + fmt(b.capacity)], ['Footprint', fmt(Math.PI * (b.x1 - b.cx) * (b.z1 - b.cz)) + ' m²'], ['Grid', b.grid]);
+    } else if (b.landmark === 'lighthouse') {
+      facts.push(['Height', fmt(b.h) + ' m'], ['Light range', '≈ 18 nmi'], ['Footprint', fmt(Math.PI * 4.6 * 4.6) + ' m²'], ['Grid', b.grid]);
+    } else {
+      const area = (b.x1 - b.x0) * (b.z1 - b.z0);
+      const h = b.landmark === 'tower' ? b.h + ' m (' + fmt(b.top) + ' m to tip)' : fmt(b.h) + ' m';
+      facts.push(['Height', h], ['Floors', fmt(b.floors)], ['Footprint', fmt(area) + ' m²'], ['Floor area', '≈ ' + fmt(area * b.floors * (b.inst.length > 2 ? 0.8 : 1)) + ' m²']);
+    }
+    return facts;
+  }
+  function openInfo(b) {
+    $('info').hidden = false;
+    const use = LU[b.use];
+    $('info-use').querySelector('i').style.setProperty('--sw', use.css);
+    $('info-use').querySelector('span').textContent = use.label;
+    $('info-title').textContent = b.name || b.address;
+    $('info-sub').textContent = (b.name ? b.address + ' · ' : '') + DISTRICT(b) + ' · Grid ' + b.grid;
+    const dl = $('info-facts');
+    dl.textContent = '';
+    for (const [k, v] of describe(b)) {
+      const d = document.createElement('div');
+      const dt = document.createElement('dt'); dt.textContent = k;
+      const dd = document.createElement('dd'); dd.textContent = v;
+      d.append(dt, dd); dl.appendChild(d);
+    }
+    const n = M.buildings.length, pct = Math.max(2, 100 * (1 - (b.rank - 1) / n));
+    $('info-rank').innerHTML = '';
+    const p = document.createElement('span');
+    p.textContent = ordinal(b.rank) + ' tallest of ' + fmt(n) + ' buildings';
+    const bar = document.createElement('div'); bar.className = 'rank-bar';
+    const fill = document.createElement('span'); fill.style.width = pct.toFixed(1) + '%';
+    bar.appendChild(fill);
+    $('info-rank').append(p, bar);
+  }
+  function closeInfo() { $('info').hidden = true; }
+  function select(b) {
+    const prev = selected; selected = b;
+    paint(prev); paint(b);
+    if (b) openInfo(b); else closeInfo();
+  }
+
+  const tip = $('tip');
+  let pointer = null, down = null, hoverDirty = false;
+  canvas.addEventListener('pointermove', (e) => {
+    pointer = { x: e.clientX, y: e.clientY, type: e.pointerType };
+    hoverDirty = true;
+    if (down && !down.moved && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) { down.moved = true; canvas.classList.add('is-dragging'); setViewButtons(null); }
+  });
+  canvas.addEventListener('pointerleave', () => { pointer = null; setHovered(null); tip.hidden = true; });
+  canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false, button: e.button }; tip.hidden = true; });
+  window.addEventListener('pointerup', (e) => {
+    canvas.classList.remove('is-dragging');
+    if (!down) return;
+    const wasClick = !down.moved && down.button === 0 && performance.now() - down.t < 600 && e.target === canvas;
+    down = null;
+    if (wasClick) select(pickAt(e.clientX, e.clientY));
+  });
+  function doHover() {
+    hoverDirty = false;
+    if (!pointer || down || pointer.type === 'touch') { if (!down) tip.hidden = true; return; }
+    const b = pickAt(pointer.x, pointer.y);
+    setHovered(b);
+    if (!b) { tip.hidden = true; return; }
+    tip.innerHTML = '<b></b><span></span>';
+    tip.firstChild.textContent = b.name || b.address;
+    tip.lastChild.textContent = LU[b.use].label + ' · ' + fmt(b.h) + ' m';
+    tip.hidden = false;
+    const r = app.getBoundingClientRect();
+    let x = pointer.x - r.left + 14, y = pointer.y - r.top + 16;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    if (x + tw > r.width - 8) x = pointer.x - r.left - tw - 12;
+    if (y + th > r.height - 8) y = pointer.y - r.top - th - 12;
+    tip.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px)';
+  }
+
+  /* ---------------------------------------------------------------- camera moves */
+  let anim = null;
+  const sph = new THREE.Spherical();
+  function currentView() {
+    const off = camera.position.clone().sub(controls.target);
+    sph.setFromVector3(off);
+    return { target: controls.target.clone(), az: sph.theta, polar: sph.phi, dist: sph.radius };
+  }
+  function viewFor(name) {
+    const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    if (name === 'plan') {
+      const fit = Math.max(1230 / tanV, 1230 / (tanV * camera.aspect));
+      return { target: new THREE.Vector3(0, 0, 0), az: 0, polar: 0.0001, dist: Math.min(fit, controls.maxDistance) };
+    }
+    if (name === 'street') {
+      const t = M.landmarks.tower || { cx: M.C.x, cz: M.C.z };
+      return { target: new THREE.Vector3(t.cx + 70, 0, t.cz + 150), az: 0.45, polar: 1.36, dist: 330 };
+    }
+    const narrow = camera.aspect < 0.85;
+    return { target: new THREE.Vector3(M.C.x, 0, M.C.z + 160), az: -0.5, polar: 0.93, dist: narrow ? 2600 : 1750 };
+  }
+  function flyTo(v, ms) {
+    const from = currentView();
+    let daz = v.az - from.az;
+    while (daz > Math.PI) daz -= Math.PI * 2;
+    while (daz < -Math.PI) daz += Math.PI * 2;
+    anim = { from, to: v, daz, t0: performance.now(), ms: reduceMotion ? 1 : (ms || 1300) };
+  }
+  function stepAnim(now) {
+    const k = clamp((now - anim.t0) / anim.ms, 0, 1);
+    const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+    const { from, to } = anim;
+    controls.target.lerpVectors(from.target, to.target, e);
+    const dist = Math.exp(Math.log(from.dist) + (Math.log(to.dist) - Math.log(from.dist)) * e);
+    sph.set(dist, from.polar + (to.polar - from.polar) * e, from.az + anim.daz * e);
+    camera.position.setFromSpherical(sph).add(controls.target);
+    if (k >= 1) anim = null;
+  }
+  controls.addEventListener('start', () => { anim = null; });
+  canvas.addEventListener('wheel', () => setViewButtons(null), { passive: true });
+  function setViewButtons(name) {
+    state.view = name;
+    document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === name)));
+  }
+  function goView(name, ms) { setViewButtons(name); flyTo(viewFor(name), ms); }
+  function clampTarget() {
+    const t = controls.target;
+    const cx = clamp(t.x, -FRAME, FRAME), cz = clamp(t.z, -FRAME, FRAME);
+    const dx = cx - t.x, dz = cz - t.z, dy = -t.y;
+    if (dx || dz || dy) { t.x += dx; t.z += dz; t.y = 0; camera.position.x += dx; camera.position.z += dz; camera.position.y += dy; }
+  }
+
+  /* ---------------------------------------------------------------- HUD: compass and scale */
+  const needle = $('needle'), scaleBar = $('scale-bar'), scaleLabel = $('scale-label');
+  const NICE = [5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000];
+  let lastScale = '';
+  function updateHUD(W, H) {
+    pv.copy(controls.target).project(camera);
+    pv2.set(controls.target.x, 0, controls.target.z - 200).project(camera);
+    const ang = Math.atan2((pv2.x - pv.x) * W, (pv2.y - pv.y) * H);
+    needle.style.transform = 'rotate(' + ang.toFixed(3) + 'rad)';
+    const dist = camera.position.distanceTo(controls.target);
+    const mpp = (2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / H;
+    let L = NICE[0];
+    for (const n of NICE) if (n / mpp <= 120) L = n;
+    const px = Math.max(8, Math.round(L / mpp));
+    const key = L + ':' + px;
+    if (key !== lastScale) {
+      lastScale = key;
+      scaleBar.style.width = px + 'px';
+      scaleLabel.textContent = L >= 1000 ? (L / 1000) + ' km' : L + ' m';
+    }
+  }
+
+  /* ---------------------------------------------------------------- controls wiring */
+  function randomSeed() { return 1000 + Math.floor(Math.random() * 9000); }
+  function setSeedHash(seed) { try { history.replaceState(null, '', '#seed-' + seed); } catch (e) { /* the frame may refuse */ } }
+  function newCity(seed) {
+    state.seed = seed;
+    build(seed);
+    setSeedHash(seed);
+    goView('oblique', 1600);
+  }
+  $('btn-new').addEventListener('click', () => newCity(randomSeed()));
+  $('btn-reset').addEventListener('click', () => goView('oblique'));
+  $('btn-day').addEventListener('click', () => setNight(false, true));
+  $('btn-night').addEventListener('click', () => setNight(true, true));
+  document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => goView(b.dataset.view)));
+  $('btn-labels').addEventListener('click', () => { state.labels = !state.labels; $('btn-labels').setAttribute('aria-pressed', String(state.labels)); });
+  $('btn-tour').addEventListener('click', () => { state.tour = !state.tour; controls.autoRotate = state.tour; $('btn-tour').setAttribute('aria-pressed', String(state.tour)); });
+  $('zoom-in').addEventListener('click', () => { const v = currentView(); v.dist = Math.max(controls.minDistance, v.dist * 0.6); flyTo(v, 500); });
+  $('zoom-out').addEventListener('click', () => { const v = currentView(); v.dist = Math.min(controls.maxDistance, v.dist / 0.6); flyTo(v, 500); });
+  $('compass').addEventListener('click', () => { const v = currentView(); v.az = 0; flyTo(v, 800); });
+  $('info-close').addEventListener('click', () => select(null));
+  $('info-zoom').addEventListener('click', () => {
+    if (!selected) return;
+    const b = selected, v = currentView();
+    flyTo({ target: new THREE.Vector3(b.cx, Math.min(b.top * 0.35, 60), b.cz), az: v.az, polar: Math.min(v.polar, 1.15), dist: clamp(b.top * 2.4 + 90, 140, 900) }, 1200);
+    setViewButtons(null);
+  });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && selected) select(null); });
+  window.addEventListener('hashchange', () => {
+    const m = /^#seed-(\d{1,6})$/.exec(location.hash);
+    if (m && +m[1] !== state.seed) newCity(+m[1]);
+  });
+
+  /* ---------------------------------------------------------------- resize and loop */
+  let W = 1, H = 1;
+  function resize() {
+    W = Math.max(1, app.clientWidth); H = Math.max(1, app.clientHeight);
+    renderer.setSize(W, H, false);
+    camera.aspect = W / H;
+    camera.updateProjectionMatrix();
+  }
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(app); else window.addEventListener('resize', resize);
+  resize();
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (anim) stepAnim(now);
+    controls.update();
+    clampTarget();
+    if (!reduceMotion) updateCars(dt);
+    const camDist = camera.position.distanceTo(controls.target);
+    scene.fog.near = camDist * 1.15; scene.fog.far = camDist * 1.15 + 7000;
+    if (lampSprite && lampSprite.visible) { const p = 0.5 + 0.5 * Math.sin(now * 0.004); lampSprite.material.opacity = 0.35 + 0.65 * p * p; }
+    renderer.render(scene, camera);
+    updateLabels(W, H);
+    updateHUD(W, H);
+    if (hoverDirty) doHover();
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------------------------------------------------------------- start */
+  function start(saved) {
+    saved = saved || {};
+    const m = /^#seed-(\d{1,6})$/.exec(location.hash || '');
+    state.seed = saved.seed || (m ? +m[1] : 1917);
+    state.night = typeof saved.night === 'boolean' ? saved.night : prefersDark();
+    state.manualScene = !!saved.manualScene;
+    build(state.seed);
+    if (saved.cam && saved.cam.length === 6) {
+      camera.position.set(saved.cam[0], saved.cam[1], saved.cam[2]);
+      controls.target.set(saved.cam[3], saved.cam[4], saved.cam[5]);
+      setViewButtons(null);
+    } else {
+      const v = viewFor('oblique');
+      sph.set(v.dist, v.polar, v.az);
+      controls.target.copy(v.target);
+      camera.position.setFromSpherical(sph).add(v.target);
+    }
+    controls.update();
+    if (window.claude && window.claude.hot && window.claude.hot.snapshot) {
+      window.claude.hot.snapshot(() => ({
+        seed: state.seed, night: state.night, manualScene: state.manualScene,
+        cam: [camera.position.x, camera.position.y, camera.position.z, controls.target.x, controls.target.y, controls.target.z],
+      }));
+    }
+    requestAnimationFrame(frame);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => applyScene());
+  }
+  const hot = window.claude && window.claude.hot;
+  if (hot && hot.ready) hot.ready(start); else start((hot && hot.data) || {});
+})();
+</script>
